@@ -1,0 +1,28 @@
+# Environment
+.env
+
+# API Keys
+*.key
+
+# Workspace (cloned repos)
+workspace/
+
+# Analysis outputs
+output/
+
+# Requirements/Planning docs
+requirements/
+
+# Python
+__pycache__/
+*.py[cod]
+venv/
+.venv/Yes
+
+# IDE
+.idea/
+.vscode/
+*.iml
+
+# macOS
+.DS_Store
