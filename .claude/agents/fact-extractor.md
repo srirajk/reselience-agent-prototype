@@ -148,6 +148,59 @@ Parse `pr.diff` to get list of changed source files.
 grep "^+++" pr.diff | cut -d' ' -f2 | grep -E '\.(java|py|ts|tsx|js|kt)$'
 ```
 
+---
+
+#### Step 1.5: 🚨 CRITICAL RULE - Create Fact File for EVERY Changed File
+
+**MANDATORY: Create a fact file for EVERY file identified in Step 1.**
+
+**NO EXCEPTIONS - Even if the file appears to be:**
+- "Just an annotation definition" (`@interface` in Java, decorator in Python)
+- "Just an interface with no implementation"
+- "Just a DTO/model with no business logic"
+- "Just constants or enums"
+- "Just a type definition" (TypeScript `interface` or `type`)
+
+**WHY This Rule Exists:**
+
+The risk-analyzer uses LLM reasoning to analyze changes across multiple files. It needs to see ALL changed files to:
+
+1. **Detect coordinated refactorings**: Annotation definition changes + usage site changes
+2. **Identify breaking API changes**: Removed methods/fields from public contracts
+3. **Assess migration completeness**: Are all usage sites updated consistently?
+4. **Reason about cross-file impacts**: Interface changes affecting implementations
+
+**If a file has no method calls or dependencies:**
+
+Still create a minimal fact file following the schema:
+```json
+{
+  "file": "path/to/File.java",
+  "language": "java",
+  "dependencies": [],
+  "calls": [],
+  "async_communication": [],
+  "public_api_changes": [
+    /* Extract ANY signature changes - added/removed methods/fields */
+  ],
+  "annotations": [
+    /* Extract annotation definitions if @interface */
+  ],
+  "config_changes": [],
+  "message_schema_changes": [],
+  "within_repo_metadata": {},
+  "external_review_flags": []
+}
+```
+
+**Key Principle:**
+
+> **Fact-extractor extracts facts. Risk-analyzer reasons about facts.**
+>
+> Don't filter upfront based on "importance" - let the LLM decide what matters.
+
+---
+
 #### Step 2: Register Repository (Once)
 Register the repository as a project with Tree-sitter.
 
