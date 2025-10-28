@@ -156,6 +156,55 @@ For each finding, assess confidence:
 
 ---
 
+### 4. Test Recommendation Quality
+
+For each test recommendation, verify:
+
+**✅ Test is specific and actionable**
+```json
+{
+  "test_needed": ["Mock holdings service with 10s delay, verify endpoint returns within 5s timeout"]
+  // ✅ Specific: exact delay, exact expected timeout
+}
+```
+
+**❌ Reject vague test recommendations:**
+```json
+{
+  "test_needed": ["Test timeout handling"]
+  // ❌ Too vague: what timeout? what scenario?
+}
+```
+
+**✅ Test type matches finding**
+
+Test type selection guide:
+- **HTTP timeout issues** → Integration test with mocked delays
+- **Breaking API changes** → Contract test (consumer-driven or provider)
+- **Circuit breaker missing** → Load test with service failure simulation
+- **Message schema changes** → Schema compatibility test (backward/forward)
+- **Async communication issues** → Integration test with message broker
+- **Database resilience** → Integration test with DB failure injection
+- **Retry logic** → Integration test with transient failure simulation
+
+**✅ Test covers failure mode**
+- Each failure mode has at least one test recommendation
+- Test demonstrates the risk (not just happy path)
+- Test validates the fix (e.g., timeout actually prevents hanging)
+
+**Examples of good vs bad test recommendations:**
+
+❌ Bad: "Add tests for the API"
+✅ Good: "Add contract test: verify GET /api/orders returns 200 with OrderDTO schema including new 'status' field"
+
+❌ Bad: "Test error handling"
+✅ Good: "Integration test: inject HTTP 500 error from inventory service, verify circuit breaker opens after 5 failures"
+
+❌ Bad: "Test performance"
+✅ Good: "Load test: 1000 concurrent requests with inventory service delayed 10s, verify no thread pool exhaustion"
+
+---
+
 ## Synthesis Process
 
 ### Step 1: Categorize Findings
@@ -201,7 +250,17 @@ Recommended merge strategy: {APPROVE | REQUEST_CHANGES | APPROVE_WITH_TESTS}
 
 ## Output Format
 
-Write your synthesized report as Markdown to `output/pr-{NUMBER}/final-report.md`:
+**IMPORTANT**: You MUST use the **Write tool** to save your final report as a Markdown file.
+
+**Output Path**: The orchestrator will specify the exact path (e.g., `output/pr-{NUMBER}/final-report.md`)
+
+**Steps**:
+1. Build the complete final report in Markdown format (see format below)
+2. Use the Write tool with the specified output path
+3. Verify the file was written successfully
+4. **Do NOT** return the report in conversation text - it must be written to a file
+
+**Markdown Format**:
 
 ```markdown
 # Pull Request Resilience Analysis
@@ -341,4 +400,6 @@ Your synthesis is successful when:
 - ✅ Executive summary is clear and actionable
 - ✅ Merge recommendation is justified
 - ✅ Developers know exactly what to fix
+- ✅ **Markdown file created using Write tool** (not returned in conversation)
+- ✅ Report saved to specified path
 - ✅ Markdown report is well-formatted and readable

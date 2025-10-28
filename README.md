@@ -2,6 +2,8 @@
 
 AI-powered Pull Request analysis system that detects production resilience risks including missing circuit breakers, timeout configurations, breaking API changes, and other failure modes that could cause production outages.
 
+> **🚀 v2.0 (ast-int branch)**: Now featuring **AST-based fact extraction** with MCP Tree-sitter! Detects risks in unknown libraries using LLM reasoning from semantic facts. See [Architecture](../miscellaneous-docs/Vanguard/RegressionAgent/Resilience_Agent_Architecture_Final.md) for details.
+
 ## Quick Start
 
 ```bash
@@ -28,7 +30,9 @@ For detailed setup instructions, see [Getting Started Guide](docs/GETTING-STARTE
 
 ## What Gets Analyzed
 
-The Resilience Agent detects production risks across multiple languages (Java, Go, Node.js, Python):
+**v2.0 Innovation**: The Resilience Agent uses **AST-based fact extraction** to reason about code semantically. It can detect risks in **unknown Vanguard-specific libraries** by recognizing patterns (e.g., names ending in "Client", blocking methods) without hardcoded library lists.
+
+The agent detects production risks across multiple languages (Java, Python, Node.js, Kotlin/Android):
 
 **New Failure Modes:**
 - External API calls without circuit breakers
@@ -94,7 +98,7 @@ output/pr-2876/
 The system uses a layered architecture with automatic skill discovery:
 
 ```
-User: /analyze-pr microservices-demo 2876
+User: /analyze-pr microservices-demo 2876 /output
          |
          v
 [Command: analyze-pr.md]
@@ -103,8 +107,15 @@ User: /analyze-pr microservices-demo 2876
     - Launches subagents
          |
          v
+[Subagent: fact-extractor]
+    - Discovers MCP Tree-sitter tools
+    - Extracts AST facts from changed files
+    - Outputs facts/*.json (following fact-schema.json)
+         |
+         v
 [Subagent: risk-analyzer]
-    - Analyzes code changes
+    - Reads AST facts
+    - Applies LLM reasoning from base knowledge
     - Auto-discovers git-risk-analysis skill
     - Detects resilience patterns
     - Outputs risk-analysis.json
@@ -116,13 +127,14 @@ User: /analyze-pr microservices-demo 2876
     - Generates final-report.md
          |
          v
-User: Reviews output/pr-2876/
+User: Reviews /output/pr-2876/
 ```
 
 **Key Components:**
 - **Commands** - User-facing orchestration (`/analyze-pr`)
-- **Subagents** - Specialized analysts (risk-analyzer, critic-agent)
+- **Subagents** - Specialized analysts (fact-extractor, risk-analyzer, critic-agent)
 - **Skills** - Auto-discovered capabilities (git-risk-analysis)
+- **Templates** - Shared schemas (fact-schema.json)
 
 For architectural details, see [Architecture Guide](docs/ARCHITECTURE.md)
 
@@ -133,25 +145,28 @@ For architectural details, see [Architecture Guide](docs/ARCHITECTURE.md)
 ### Analyze Pull Request
 
 ```bash
-/analyze-pr <repo_name> <pr_number>
+/analyze-pr <repo_name> <pr_number> [output_dir]
 ```
 
 **Arguments:**
 - `repo_name` - Repository directory name (e.g., "microservices-demo")
 - `pr_number` - GitHub PR number (e.g., "2876")
+- `output_dir` - Output directory path (optional, defaults to `./output`, **recommend absolute path**)
 
 **Example:**
 ```bash
 /analyze-pr microservices-demo 2876
+/analyze-pr microservices-demo 2876 /Users/me/analysis-results
 ```
 
 **What Happens:**
 1. Navigates to repository directory
 2. Fetches PR from GitHub origin
 3. Generates diff between base branch and PR
-4. Runs risk-analyzer with auto-discovered git skill
-5. Validates findings with critic-agent
-6. Outputs results to `output/pr-<number>/`
+4. Launches fact-extractor to extract AST facts via MCP Tree-sitter
+5. Runs risk-analyzer with AST facts and auto-discovered git skill
+6. Validates findings with critic-agent
+7. Outputs results to `{output_dir}/pr-<number>/`
 
 ---
 
@@ -228,8 +243,11 @@ reselience-agent-prototype/
 │   ├── commands/
 │   │   └── analyze-pr.md           # Orchestrator (user-facing)
 │   ├── agents/
+│   │   ├── fact-extractor.md       # AST fact extraction (v2.0)
 │   │   ├── risk-analyzer.md        # Resilience risk detection
 │   │   └── critic-agent.md         # Quality validation
+│   ├── templates/
+│   │   └── fact-schema.json        # Fact JSON schema (v2.0)
 │   └── skills/
 │       └── git-risk-analysis/
 │           └── SKILL.md            # Auto-discovered git analysis
@@ -243,6 +261,8 @@ reselience-agent-prototype/
 │   └── pr-<NUMBER>/
 │       ├── metadata.json
 │       ├── pr.diff
+│       ├── facts/                  # AST facts (v2.0)
+│       │   └── *.json
 │       ├── risk-analysis.json
 │       └── final-report.md
 ├── docs/
@@ -270,6 +290,12 @@ reselience-agent-prototype/
 - Skills loaded only when needed (progressive disclosure)
 - No explicit skill references required
 - Composable and reusable capabilities
+
+**Template-Based Schemas:**
+- Fact JSON schema defined once in `.claude/templates/`
+- All agents reference the same schema
+- Single source of truth for data formats
+- Reduces token usage across agents
 
 **Agent-First Design:**
 - High-level goals, not step-by-step scripts
@@ -382,6 +408,41 @@ No Python, no API keys, no additional dependencies required for Claude Code usag
 - Verify base branch detection (main vs master)
 
 For detailed troubleshooting, see [Getting Started Guide](docs/GETTING-STARTED.md)
+
+---
+
+## v2.0 Features (ast-int branch)
+
+### AST-Based Fact Extraction
+- **MCP Tree-sitter Integration**: Semantic code analysis across Java, Python, Node.js, Kotlin
+- **Fact-Driven LLM Reasoning**: Extract facts (dependencies, call semantics, config) → LLM reasons using base knowledge
+- **Unknown Library Detection**: Recognizes Vanguard-specific libraries via naming patterns (e.g., "VanguardHttpClient") without hardcoding
+
+### Multi-Language Support
+- **Single workflow** works across all languages (same risk-analysis.json schema)
+- **Language-specific AST queries** handle syntax differences
+- **Universal resilience patterns** (timeout_missing, circuit_breaker_missing, etc.)
+
+### Context-Aware Severity
+- **Fan-in/fan-out analysis** enriches risk scoring
+- **Same pattern, different severity**: Missing timeout in admin tool (LOW) vs user API (CRITICAL)
+- **Git-enhanced metrics**: Hotspot detection, rollback history correlation
+
+### Architecture Documentation
+Complete architecture documentation available:
+- [Architecture Final](../miscellaneous-docs/Vanguard/RegressionAgent/Resilience_Agent_Architecture_Final.md) - Fact-driven approach
+- [Multi-Language Plan](../miscellaneous-docs/Vanguard/RegressionAgent/Multi_Language_Support_Plan.md) - Implementation roadmap
+- [Updated Workflow](../miscellaneous-docs/Vanguard/RegressionAgent/new-thoughts-updated.md) - Step-by-step pipeline
+
+### Comparison: v1.0 vs v2.0
+
+| Feature | v1.0 (main) | v2.0 (ast-int) |
+|---------|-------------|----------------|
+| Detection | Grep + few-shot examples | AST facts + LLM reasoning |
+| Languages | Java (examples) | Java, Python, Node, Kotlin |
+| Unknown Libraries | Cannot detect | Detects via semantic patterns |
+| Severity | Pattern-based | Context-aware (fan-in/fan-out) |
+| Scalability | Limited to known libraries | Scales to custom Vanguard libraries |
 
 ---
 

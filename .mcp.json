@@ -1,0 +1,15 @@
+{
+  "mcpServers": {
+    "tree_sitter": {
+      "command": "uv",
+      "args": [
+        "--directory",
+        "/Users/srirajkadimisetty/projects/mcp-server-tree-sitter",
+        "run",
+        "-m",
+        "mcp_server_tree_sitter.server"
+      ],
+      "description": "Tree-sitter AST parser for multi-language code analysis (Java, Python, JavaScript/TypeScript, Kotlin)"
+    }
+  }
+}

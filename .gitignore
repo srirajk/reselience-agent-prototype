@@ -8,8 +8,9 @@
 workspace/
 
 # Analysis outputs
+output-old/
 output/
-
+a
 # Requirements/Planning docs
 requirements/
 
@@ -26,3 +27,4 @@ venv/
 
 # macOS
 .DS_Store
+/output/

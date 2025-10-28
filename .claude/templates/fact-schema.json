@@ -1,0 +1,222 @@
+{
+  "$schema": "Enhanced fact extraction schema for PR analysis v2.0 - Pattern-based async/pub-sub detection",
+  "$comment": "This schema describes semantic facts extracted from code files via AST parsing. Uses pattern-based detection (language/framework-agnostic) instead of hardcoded annotations.",
+
+  "file": "string - relative path to file from repository root (e.g., 'src/services/OrderService.java')",
+  "language": "string - programming language (java|python|typescript|kotlin|javascript|go|rust)",
+
+  "dependencies": [
+    {
+      "group": "string - package/module group (e.g., 'com.example.internal', 'github.com/org/repo')",
+      "artifact": "string - package/library name (e.g., 'http-client', 'kafka-clients')",
+      "version": "string - version number (e.g., '2.1.0') or null if unknown",
+      "is_new": "boolean - true if this dependency was added in this PR, false if pre-existing",
+      "external_service": "boolean - true if dependency connects to external service (API, MQ, DB), false otherwise"
+    }
+  ],
+
+  "calls": [
+    {
+      "line": "number - line number in file where call appears",
+      "receiver_type": "string - type/class of object being called (e.g., 'HttpClient', 'OrderProducer', 'RestTemplate')",
+      "method": "string - method name being invoked (e.g., 'execute', 'send', 'getForEntity')",
+
+      "_comment_existing_fields": "These fields are preserved from v1.0",
+      "is_blocking": "boolean - true if synchronous/blocking call, false if async",
+      "has_timeout": "boolean - true if timeout parameter/config present in this call (RENAMED from has_timeout_param)",
+      "has_circuit_breaker_annotation": "boolean - true if circuit breaker annotation present on method",
+      "has_retry_annotation": "boolean - true if retry annotation present on method",
+      "in_async_method": "boolean - true if call is inside async method/function (RENAMED from in_async_context)",
+      "in_transaction": "boolean - true if call is inside transaction block",
+      "arguments": [
+        {
+          "name": "string - parameter name",
+          "type": "string - parameter type"
+        }
+      ],
+      "return_type": "string - return type of the method (e.g., 'HttpResponse', 'CompletableFuture<String>', 'Result<T, Error>')",
+      "throws": ["array of exception types this method can throw"],
+
+      "_comment_new_categorization": "NEW in v2.0: Call categorization and resource identification",
+      "category": "string - type of call (http|grpc|database|mq_publish|mq_consume|cache|webhook|websocket|sse|background_job)",
+      "resource": "string - resource being accessed (URL, topic name, queue name, DB table, cache key)",
+      "is_external": "boolean - true if resource is outside repo's domain (external API, external queue)",
+
+      "_comment_new_concrete_values": "NEW in v2.0: Concrete resilience values (not just booleans)",
+      "timeout_value_ms": "number - actual timeout value in milliseconds, null if not configured",
+      "retry_count": "number - number of retry attempts configured, null if not configured",
+      "retry_backoff_ms": "number - backoff interval between retries in milliseconds, null if not configured",
+
+      "_comment_new_circuit_breaker": "NEW in v2.0: Circuit breaker configuration details",
+      "circuit_breaker_config": {
+        "enabled": "boolean - true if circuit breaker is configured",
+        "failure_threshold": "number - percentage of failures to open circuit (e.g., 50 for 50%)",
+        "wait_duration_ms": "number - time to wait before half-open state",
+        "half_open_calls": "number - number of calls allowed in half-open state"
+      },
+
+      "_comment_new_fallback": "NEW in v2.0: Fallback handling",
+      "fallback_handler": "string - method name of fallback handler, or null if no fallback",
+
+      "_comment_new_error_handling": "NEW in v2.0: Error handling patterns",
+      "error_handling": {
+        "has_try_catch": "boolean - true if call is wrapped in try-catch or error check",
+        "swallows_exception": "boolean - true if exception is caught but not rethrown (anti-pattern)",
+        "rethrows": "boolean - true if exception is rethrown after handling",
+        "logs_error": "boolean - true if error is logged"
+      },
+
+      "_comment_new_threading": "NEW in v2.0: Threading patterns and anti-patterns",
+      "threading": {
+        "creates_thread_pool": "boolean - true if call creates new thread pool",
+        "uses_executor": "boolean - true if call uses executor service",
+        "blocking_call_in_async": "boolean - true if blocking call inside async context (ANTI-PATTERN)"
+      },
+
+      "_comment_new_bulkhead": "NEW in v2.0: Bulkhead/rate limiting configuration",
+      "bulkhead_config": {
+        "enabled": "boolean - true if bulkhead/semaphore is configured",
+        "semaphore_size": "number - max concurrent calls allowed, null if not configured"
+      }
+    }
+  ],
+
+  "_comment_async_communication": "NEW in v2.0: Top-level array for async communication patterns (Kafka, SQS, webhooks, WebSockets, gRPC streams, etc.)",
+  "async_communication": [
+    {
+      "type": "string - communication type (kafka_topic|sqs_queue|pubsub_topic|eventhub|rabbitmq|http_webhook|grpc_stream|websocket|sse|background_job)",
+      "name": "string - resource identifier (topic name like 'order-created', URL like 'https://api.example.com/webhook', queue name)",
+      "operation": "string - operation type (publish|consume|send|stream|emit)",
+      "payload_type": "string - type/class of payload being sent (e.g., 'com.example.OrderCreatedEvent', 'OrderDTO')",
+      "is_new": "boolean - true if this communication endpoint was added in this PR",
+      "line": "number - line number where this communication is defined/used",
+
+      "delivery_guarantee": "string - delivery semantics (at_most_once|at_least_once|exactly_once|none)",
+      "fire_and_forget": "boolean - true if no confirmation/acknowledgment expected (RISK FLAG)",
+
+      "confirmation": {
+        "type": "string - confirmation mechanism (ack|callback|response_code|none)",
+        "timeout_ms": "number - timeout for confirmation in milliseconds, null if not configured",
+        "has_timeout": "boolean - true if timeout is configured for confirmation (CRITICAL for reliability)"
+      },
+
+      "retry_policy": {
+        "enabled": "boolean - true if retry is configured",
+        "max_attempts": "number - maximum retry attempts, null if not configured",
+        "backoff_ms": "number - backoff interval in milliseconds, null if not configured",
+        "backoff_strategy": "string - backoff strategy (exponential|linear|fixed|none)"
+      },
+
+      "error_handling": {
+        "has_dead_letter": "boolean - true if dead letter queue/topic is configured",
+        "dead_letter_target": "string - name of DLQ/DLT, null if not configured",
+        "has_circuit_breaker": "boolean - true if circuit breaker protects this communication",
+        "has_fallback": "boolean - true if fallback mechanism exists",
+        "fallback_strategy": "string - fallback approach (cached|default|skip|none)"
+      },
+
+      "idempotency": {
+        "strategy": "string - idempotency mechanism (none|message_id|deduplication_key|idempotent_consumer)",
+        "key_field": "string - field name used for idempotency key, null if not applicable"
+      },
+
+      "_comment_mq_specific": "Optional fields - only for message queue patterns",
+      "consumer_group": "string - consumer group ID (Kafka) or equivalent, null if not applicable",
+      "ack_mode": "string - acknowledgment mode (auto|manual|client), null if not applicable",
+      "ordering_guarantee": "string - message ordering (partition_key|fifo|unordered), null if not applicable",
+
+      "_comment_http_specific": "Optional fields - only for HTTP webhook patterns",
+      "http_method": "string - HTTP method (POST|PUT|PATCH|GET), null if not HTTP",
+      "expected_response": "string - expected HTTP response (2xx|202|204|none), null if not HTTP",
+      "has_response_validation": "boolean - true if response is validated, false/null otherwise"
+    }
+  ],
+
+  "_comment_message_schema_changes": "NEW in v2.0: Breaking changes in message payloads (for async communication)",
+  "message_schema_changes": [
+    {
+      "class_name": "string - fully qualified class name (e.g., 'com.example.OrderCreatedEvent')",
+      "file": "string - file path where class is defined",
+      "serialization_framework": "string - serialization used (jackson|avro|protobuf|thrift|json)",
+      "change_type": "string - type of change (field_added|field_removed|field_renamed|type_changed)",
+      "old_fields": [
+        {
+          "name": "string - field name",
+          "type": "string - field type",
+          "required": "boolean - true if field is required/non-nullable"
+        }
+      ],
+      "new_fields": [
+        {
+          "name": "string - field name",
+          "type": "string - field type",
+          "required": "boolean - true if field is required/non-nullable"
+        }
+      ],
+      "breaking": "boolean - true if this change breaks existing consumers (e.g., required field removed)",
+      "backward_compatible": "boolean - true if old consumers can handle new schema",
+      "forward_compatible": "boolean - true if new consumers can handle old schema"
+    }
+  ],
+
+  "public_api_changes": [
+    {
+      "type": "string - type of change (endpoint_added|endpoint_removed|endpoint_modified|field_added|field_removed|field_renamed)",
+      "location": "string - where the change occurred (e.g., '/api/portfolio/{id}', 'PortfolioDTO.holdings')",
+      "old_signature": "string - previous signature/definition (null if added)",
+      "new_signature": "string - new signature/definition (null if removed)",
+      "breaking": "boolean - true if this is a breaking change for consumers"
+    }
+  ],
+
+  "config_changes": [
+    {
+      "type": "string - type of config (timeout|pool_size|retry_count|circuit_breaker|bulkhead)",
+      "location": "string - where in code (file:line or config key)",
+      "old_value": "string|number - previous value (null if new)",
+      "new_value": "string|number - new value (null if removed)"
+    }
+  ],
+
+  "annotations": [
+    {
+      "line": "number - line number",
+      "type": "string - annotation type (e.g., 'CircuitBreaker', 'Retry', 'Async', 'Timeout', 'KafkaListener')",
+      "target": "string - what is annotated (method name or class name)",
+      "parameters": "object - annotation parameters as key-value pairs (e.g., {'maxAttempts': 3, 'backoff': 2000})"
+    }
+  ],
+
+  "_comment_metadata": "NEW in v2.0: Metadata arrays (populated by risk-analyzer, not fact-extractor)",
+  "within_repo_metadata": {
+    "$comment": "This section is populated by risk-analyzer using AST-based analysis, NOT by fact-extractor",
+    "analyzed_methods": [
+      {
+        "method": "string - method signature (e.g., 'OrderService.createOrder')",
+        "file": "string - file path",
+        "line": "number - line number",
+        "callers_count": "number - count of within-repo callers (from AST find_references)",
+        "callers_sample": ["array of strings - sample caller locations (file:line)"],
+        "is_user_facing": "boolean - true if called from controller/API layer",
+        "is_critical_path": "boolean - true if in critical package (auth/, payment/, checkout/)"
+      }
+    ],
+    "ownership": {
+      "module_name": "string - module/service name",
+      "bounded_context": "string - domain context",
+      "team": "string - owning team (from CODEOWNERS or config)"
+    }
+  },
+
+  "external_review_flags": [
+    {
+      "$comment": "Flags for cross-repo concerns that need external system checks (schema registry, API gateway)",
+      "type": "string - check type (schema_registry_check|api_gateway_check|contract_test_needed)",
+      "resource_name": "string - resource to check (topic name, API endpoint)",
+      "resource_type": "string - resource type (kafka_topic|rest_endpoint|grpc_service)",
+      "reason": "string - why this needs external review",
+      "registry_url": "string - URL to registry/gateway for manual check, null if not applicable",
+      "recommendation": "string - what to check in external system"
+    }
+  ]
+}
