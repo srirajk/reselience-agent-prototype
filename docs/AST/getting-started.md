@@ -27,6 +27,8 @@ cd mcp-server-tree-sitter
 pip install -e .
 ```
 
+**IMPORTANT:** After installation, apply the Java template fix to avoid "Impossible pattern" errors. See [tree-sitter-code-changes/replace.md](../tree-sitter-code-changes/replace.md) for instructions on replacing the `java.py` file.
+
 ### 3. Git Repository Access
 
 Ensure you have:
