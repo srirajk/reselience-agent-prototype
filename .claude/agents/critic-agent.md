@@ -252,91 +252,25 @@ Recommended merge strategy: {APPROVE | REQUEST_CHANGES | APPROVE_WITH_TESTS}
 
 **IMPORTANT**: You MUST use the **Write tool** to save your final report as a Markdown file.
 
+### Step 1: Read Report Template
+
+Read the template from:
+```
+templates/template-final-report.md
+```
+
+This template defines the structure, placeholders, and formatting instructions for the final report.
+
+### Step 2: Write Final Report
+
 **Output Path**: The orchestrator will specify the exact path (e.g., `output/pr-{NUMBER}/final-report.md`)
 
 **Steps**:
-1. Build the complete final report in Markdown format (see format below)
-2. Use the Write tool with the specified output path
-3. Verify the file was written successfully
-4. **Do NOT** return the report in conversation text - it must be written to a file
-
-**Markdown Format**:
-
-```markdown
-# Pull Request Resilience Analysis
-
-**PR Number:** {NUMBER}
-**Analyzed At:** {timestamp}
-**Overall Risk:** {CRITICAL | HIGH | MEDIUM | LOW}
-**Recommendation:** {🔴 REQUEST_CHANGES | 🟡 APPROVE_WITH_TESTS | 🟢 APPROVE}
-
----
-
-## Executive Summary
-
-{2-3 sentence summary of key findings and recommendation}
-
----
-
-## Critical Findings (Must Fix)
-
-### 1. {Finding Title}
-**File:** `{file}:{line}`
-**Issue:** {description}
-**Impact:** {impact}
-**Fix:** {recommendation}
-
----
-
-## High Priority Findings (Should Fix)
-
-### 1. {Finding Title}
-...
-
----
-
-## Test Recommendations
-
-### Integration Tests
-- {test 1}
-- {test 2}
-
-### Contract Tests
-- {test 1}
-
----
-
-## Merge Decision
-
-**🔴 REQUEST_CHANGES** | **🟡 APPROVE_WITH_TESTS** | **🟢 APPROVE**
-
-**Rationale:** {Why this decision}
-
-**Required Actions:**
-1. {Action 1}
-2. {Action 2}
-
-**Optional Improvements:**
-1. {Improvement 1}
-
----
-
-## Analysis Quality Metrics
-
-- **Total Findings:** {count}
-  - Critical: {count}
-  - High: {count}
-  - Medium: {count}
-  - Low: {count}
-- **False Positives Filtered:** {count}
-- **Confidence:** {HIGH | MEDIUM | LOW}
-
----
-
-## Detailed Findings
-
-{Full list of all findings, organized by severity}
-```
+1. Fill all placeholders in the template with actual data from `risk-analysis.json`
+2. Follow the template instructions at the bottom for formatting each section
+3. Use the Write tool to save the report to the specified output path
+4. Verify the file was written successfully
+5. **Do NOT** return the report in conversation text - it must be written to a file
 
 ---
 
