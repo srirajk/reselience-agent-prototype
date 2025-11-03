@@ -101,6 +101,36 @@ All detailed AST facts available at: `output/pr-{pr_number}/facts/*.json`
 
 ---
 
+## Appendix: File Analysis Coverage
+
+### Files Analyzed ({files_analyzed})
+
+| File | Language | AST Extraction | Findings Count |
+|------|----------|----------------|----------------|
+{analyzed_files_table}
+
+### Files Reviewed for Context ({files_reviewed_for_context})
+
+The following files were part of the PR but do not require resilience analysis:
+
+| File | Type | Reason |
+|------|------|--------|
+{context_files_table}
+
+{file_exclusion_explanations}
+
+### Coverage Summary by Type
+
+| File Type | Total | Analyzed | Reviewed for Context | Source Coverage % |
+|-----------|-------|----------|----------------------|-------------------|
+{coverage_by_type_table}
+
+**Total PR Files:** {total_pr_files}
+**Source Files Analyzed:** {files_analyzed} / {source_files_total} ({source_coverage_percentage}%)
+**Context Files Reviewed:** {files_reviewed_for_context}
+
+---
+
 **Analysis Powered By:**
 Resilience Agent v2.0 - AST-Based Production Risk Analysis
 **Generated:** {timestamp}
@@ -180,6 +210,39 @@ For each breaking change:
 
 **Test Recommendations:**
 {test_checklist}
+```
+
+**Section: File Analysis Coverage**
+
+For the "Files Analyzed" table, add a row for each source file that was successfully analyzed:
+```
+| {file_path} | {language} | {ast_status} | {findings_count} |
+```
+Example: `| src/services/PaymentService.java | Java | Success | 3 |`
+
+For the "Files Reviewed for Context" table, add a row for each non-source file (dynamically categorized using pattern matching):
+```
+| {file_path} | {category} | {reason} |
+```
+- `{category}` determined by pattern matching (Configuration, Documentation, Build file, Test file, Binary/Media, etc.)
+- `{reason}` from the categorization table in critic-agent.md
+- Only include files that were actually present in this PR
+
+For the "Coverage Summary by Type" table, dynamically discover all file extensions from pr.diff and add a row for each:
+```
+| {extension} | {total_count} | {analyzed_count} | {context_count} | {source_coverage} |
+```
+- `{extension}` discovered from actual PR files (e.g., .java, .py, .md, .yml, .xml, .properties)
+- `{source_coverage}` = Percentage if analyzed_count > 0, otherwise "N/A"
+- Sort: source extensions first (analyzed > 0), then context extensions (analyzed = 0)
+
+For aggregate metrics, calculate dynamically from PR data:
+```
+{total_pr_files} = Count of ALL files in pr.diff
+{source_files_total} = Count of files successfully analyzed
+{files_analyzed} = Same as source_files_total
+{source_coverage_percentage} = (files_analyzed / source_files_total) * 100, or "N/A" if no source files
+{files_reviewed_for_context} = total_pr_files - files_analyzed
 ```
 
 **Section: External Review Flags**

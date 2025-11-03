@@ -1,0 +1,111 @@
+ Bash command
+
+   cd workspace/spring-integration-samples && if ! git rev-parse --verify pr-369 >/dev/null 2>&1; then git fetch origin pull/369/head:pr-369; else echo "Branch pr-369 already exists, skipping fetch"; fi
+   Fetch PR branch if not exists
+
+ Do you want to proceed?
+ ❯ 1. Yes
+   2. Yes, and don't ask again for similar commands in /Users/srirajkadimisetty/projects/claude-code-assembler-examples/reselience-agent-prototype
+   3. No, and tell Claude what to do differently (esc)
+
+
+   ---
+
+
+    Bash command
+
+      cd workspace/spring-integration-samples && git rev-parse --verify --quiet main >/dev/null 2>&1 && echo "main" || (git rev-parse --verify --quiet master >/dev/null 2>&1 && echo "master" || echo "unknown")
+      Detect base branch
+
+    Do you want to proceed?
+    ❯ 1. Yes
+      2. No, and tell Claude what to do differently (esc)
+
+
+      ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+       Bash command
+
+         git rev-parse --verify --quiet main >/dev/null 2>&1 && echo "main" || (git rev-parse --verify --quiet master >/dev/null 2>&1 && echo "master" || echo "unknown")
+         Detect base branch
+
+       Do you want to proceed?
+       ❯ 1. Yes
+         2. No, and tell Claude what to do differently (esc)
+
+
+         ---
+
+
+
+         ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+          Bash command
+
+            git diff main...pr-369 > ../../output/pr-369/pr.diff
+            Generate PR diff
+
+          Do you want to proceed?
+          ❯ 1. Yes
+            2. Yes, and don't ask again for ../../output/pr-369/pr.diff commands in /Users/srirajkadimisetty/projects/claude-code-assembler-examples/reselience-agent-prototype
+            3. No, and tell Claude what to do differently (esc)
+---
+
+─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ Opened changes in IntelliJ IDEA ⧉
+
+ Do you want to make this edit to metadata.json?
+ ❯ 1. Yes
+   2. Yes, allow all edits during this session (shift+tab)
+   3. No, and tell Claude what to do differently (esc)
+
+
+----
+
+Bash command
+
+   for file in "basic/barrier/src/main/java/org/springframework/integration/samples/barrier/Application.java"
+   "basic/barrier/src/main/java/org/springframework/integration/samples/barrier/RequestGateway.java"
+   "basic/barrier/src/main/java/org/springframework/integration/samples/barrier/configuration/ClientConfiguration.java"
+   "basic/barrier/src/main/java/org/springframework/integration/samples/barrier/configuration/ServerConfiguration.java"
+   "basic/barrier/src/main/java/org/springframework/integration/samples/barrier2/ErrorHandlingApplication.java" "basic/barrier/src/main/java/org/springframework/integration/samples/barrier2/Gateway.java"
+   "basic/barrier/src/main/java/org/springframework/integration/samples/barrier2/configuration/ErrorHandlingConfiguration.java"
+   "basic/control-bus/src/main/java/org/springframework/integration/samples/controlbus/config/ControlBusConfiguration.java"
+   "basic/control-bus/src/test/java/org/springframework/integration/samples/controlbus/ControlBusDemoTest.java" "basic/enricher/src/main/java/org/springframework/integration/samples/enricher/Main.java"
+   "basic/enricher/src/test/java/org/springframework/integration/samples/enricher/service/UserServiceTest.java"; do if [ -f "$file" ]; then echo "EXISTS: $file"; else echo "NOT_FOUND: $file"; fi; done
+   Check which files exist in working tree
+
+ Do you want to proceed?
+ ❯ 1. Yes
+   2. Yes, and don't ask again for similar commands in /Users/srirajkadimisetty/projects/claude-code-assembler-examples/reselience-agent-prototype
+   3. No, and tell Claude what to do differently (esc)
+
+   ----
+
+
+      NEXT STEPS:
+      Risk-analyzer can now process these fact files to:
+      1. Validate configuration correctness
+      2. Analyze barrier pattern usage
+      3. Review RabbitMQ integration setup
+      4. Check for missing resilience patterns in integration flows
+      EOF
+      cat /Users/srirajkadimisetty/projects/claude-code-assembler-examples/reselience-agent-prototype/output/pr-369/facts/extraction-summary.txt
+      Create extraction summary report
+
+    Do you want to proceed?
+    ❯ 1. Yes
+      2. No, and tell Claude what to do differently (esc)
+
+      ---
+
+      ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+       Bash command
+
+         echo "=== Fact Extraction Verification ===" && echo && echo "Expected files (from pr.diff): 11" && echo "Created fact files: $(ls -1
+         /Users/srirajkadimisetty/projects/claude-code-assembler-examples/reselience-agent-prototype/output/pr-369/facts/*.json 2>/dev/null | wc -l | tr -d ' ')" && echo && echo "All fact files:" && ls -1
+         /Users/srirajkadimisetty/projects/claude-code-assembler-examples/reselience-agent-prototype/output/pr-369/facts/*.json | xargs -n1 basename && echo && echo "✅ Fact extraction complete for PR #369"
+         Verify fact extraction completion
+
+       Do you want to proceed?
+       ❯ 1. Yes
+         2. Yes, and don't ask again for xargs commands in /Users/srirajkadimisetty/projects/claude-code-assembler-examples/reselience-agent-prototype
+         3. No, and tell Claude what to do differently (esc)

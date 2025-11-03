@@ -789,6 +789,821 @@ For each detected async communication pattern, create an entry:
 
 ---
 
+### Phase 2c: Configuration File Parsing (Semantic Extraction)
+
+**NEW in v2.1**: Extract resilience configuration from config files to resolve timeout/retry values from code.
+
+**Strategy**: Find config files, read in parallel, parse with LLM in single batch call.
+
+---
+
+#### Step 1: Discover Configuration Files
+
+Use **Glob tool** to find configuration files in the repository:
+
+**Patterns to search**:
+- `**/application.yml`
+- `**/application.yaml`
+- `**/application*.properties`
+- `**/.env*`
+- `**/resilience4j.yml`
+- `**/resilience4j.yaml`
+- `**/config/*.yml`
+- `**/config/*.yaml`
+- `**/config/*.properties`
+
+**Filter**: Only process files in the repository root, `config/`, `src/main/resources/`, `.config/` directories.
+
+**Performance**: Execute all Glob patterns in parallel (single message with multiple Glob calls).
+
+---
+
+#### Step 2: Read Configuration Files in Parallel
+
+Use **Read tool** to fetch contents of all discovered config files.
+
+**Performance**: Make multiple Read tool calls in a single message (enables parallel reading).
+
+**Example** (3 files found):
+```
+[In single message]
+- Read application.yml
+- Read application.properties
+- Read resilience4j.yml
+[Wait for all results together]
+```
+
+**Limit**: If >10 config files found, prioritize:
+1. Files with "resilience" in name (resilience4j.yml, resilience-config.yml)
+2. application.yml / application.properties (main config)
+3. Files in `config/` or `src/main/resources/`
+
+Read top 10 files only to minimize latency.
+
+---
+
+#### Step 3: Extract Resilience Configurations with Single LLM Call
+
+**IMPORTANT**: Use ONE batch LLM call to parse all config files together, not sequential calls.
+
+**Approach**: Do NOT use Python YAML libraries. Use Read tool + LLM reasoning.
+
+**How**: Provide all config file contents to LLM with extraction prompt:
+
+**Extraction Prompt**:
+```
+Extract resilience-related configuration values from these config files:
+
+[File 1: config.yml]
+<contents of config.yml>
+
+[File 2: application.properties]
+<contents of application.properties>
+
+Extract these configuration categories using semantic pattern matching:
+
+1. **Timeouts** - Keys matching patterns:
+   - Contains: `timeout`, `ttl`, `deadline`, `duration`
+   - Context: `connect`, `read`, `write`, `socket`, `request`, `idle`
+   - Separators: any (dots, underscores, hyphens, camelCase)
+   - Examples: `*.timeout`, `*.connect-timeout`, `*_TIMEOUT`, `*Timeout`
+   - Convert values to milliseconds (5s → 5000, 30000 → 30000)
+
+2. **Retry Policies** - Keys matching patterns:
+   - Contains: `retry`, `retries`, `attempts`, `max-attempts`
+   - Backoff: `backoff`, `delay`, `wait`, `interval`
+   - Separators: any (dots, underscores, hyphens, camelCase)
+   - Examples: `*.retry.*`, `*.max-attempts`, `*_RETRY`, `*RetryCount`
+   - Convert backoff to milliseconds
+
+3. **Circuit Breakers** - Keys matching patterns:
+   - Contains: `circuit`, `breaker`, `failure`, `threshold`, `trip`
+   - State: `wait`, `reset`, `half-open`, `window`, `sliding`
+   - Separators: any (dots, underscores, hyphens, camelCase)
+   - Examples: `*.circuitbreaker.*`, `*.failure-rate`, `*_BREAKER`, `*CircuitBreaker`
+   - Extract: failure-rate-threshold, wait-duration, sliding-window-size
+
+4. **Connection Pools** - Keys matching patterns:
+   - Contains: `pool`, `connection`, `datasource`, `max-connections`, `pool-size`
+   - Context: `minimum`, `maximum`, `timeout`, `idle`
+   - Separators: any (dots, underscores, hyphens, camelCase)
+   - Examples: `*.pool.*`, `*.max-connections`, `*_POOL_SIZE`, `*PoolSize`
+
+5. **Thread Pools** - Keys matching patterns:
+   - Contains: `thread`, `executor`, `pool-size`, `queue-capacity`, `workers`
+   - Context: `core`, `max`, `maximum`, `minimum`, `queue`
+   - Separators: any (dots, underscores, hyphens, camelCase)
+   - Examples: `*.thread-pool.*`, `*.executor.*`, `*_THREADS`, `*ThreadPool`
+
+**Example Config Keys Detected (Multi-Framework):**
+
+**Spring Boot:**
+```yaml
+feign.client.config.default.connectTimeout: 5000
+resilience4j.retry.instances.service.maxAttempts: 3
+```
+
+**Quarkus:**
+```yaml
+quarkus.rest-client.timeout: 5000
+quarkus.fault-tolerance.retry.max-retries: 3
+```
+
+**Django (Python):**
+```python
+# settings.py
+HTTP_CLIENT_TIMEOUT = 5000
+RETRY_MAX_ATTEMPTS = 3
+```
+
+**Express (Node.js):**
+```javascript
+module.exports = {
+  httpTimeout: 5000,
+  retryAttempts: 3
+}
+```
+
+**Go (Viper):**
+```yaml
+http:
+  client:
+    timeout: 5000
+retry:
+  maxAttempts: 3
+```
+
+Output JSON format:
+{
+  "timeouts": {
+    "http.client.connect-timeout": {
+      "value_ms": 5000,
+      "source": "config.yml:http.client.connect-timeout",
+      "raw_value": "5s"
+    }
+  },
+  "retry_policies": {
+    "service.api.retry.max-attempts": {
+      "max_attempts": 3,
+      "backoff_ms": 2000,
+      "source": "config.yml:service.api.retry"
+    }
+  },
+  "circuit_breakers": { ... },
+  "connection_pools": { ... },
+  "thread_pools": { ... }
+}
+```
+
+**Output**: Store parsed config in `resilience_config` object (defined in fact-schema.json).
+
+**Performance Target**: Single LLM call should complete in 2-3 seconds for 5-10 config files.
+
+---
+
+#### Step 4: Normalize Configuration Values
+
+**Timeout values** - Convert to milliseconds:
+- `5s` → 5000
+- `30` (assume seconds if no unit) → 30000
+- `5000ms` → 5000
+- `2m` → 120000
+
+**Retry counts** - Extract integer:
+- `max-attempts: 3` → 3
+- `maxRetries: 5` → 5
+
+**Percentages** - Extract decimal:
+- `failure-rate-threshold: 50` → 50.0
+- `slow-call-rate-threshold: 80%` → 80.0
+
+---
+
+#### Step 5: Build resilience_config Object
+
+Add to fact JSON root (NOT per-file, global for entire PR):
+
+```json
+{
+  "resilience_config": {
+    "source_files": ["config.yml", "application.properties"],
+    "timeouts": {
+      "http.client.connect-timeout": {
+        "value_ms": 5000,
+        "source": "config.yml:http.client.connect-timeout",
+        "raw_value": "5s"
+      },
+      "database.query.timeout": {
+        "value_ms": 30000,
+        "source": "application.properties:database.query.timeout",
+        "raw_value": "30000"
+      }
+    },
+    "retry_policies": {
+      "service.api.retry.max-attempts": {
+        "max_attempts": 3,
+        "backoff_ms": 2000,
+        "source": "config.yml:service.api.retry",
+        "backoff_strategy": "fixed"
+      }
+    },
+    "circuit_breakers": {
+      "external.client.circuit-breaker": {
+        "failure_rate_threshold": 50.0,
+        "wait_duration_ms": 60000,
+        "sliding_window_size": 10,
+        "source": "config.yml:external.client.circuit-breaker"
+      }
+    },
+    "connection_pools": {
+      "database.pool.max-size": {
+        "max_connections": 10,
+        "connection_timeout_ms": 30000,
+        "source": "config.yml:database.pool"
+      }
+    },
+    "thread_pools": {
+      "async.executor.pool-size": {
+        "core_pool_size": 5,
+        "max_pool_size": 10,
+        "queue_capacity": 100,
+        "source": "config.yml:async.executor"
+      }
+    }
+  }
+}
+```
+
+**Note**: This is a GLOBAL object extracted once per PR, not per file.
+
+---
+
+### Phase 2d: Variable Resolution & Config Linking
+
+**Goal**: Link code calls to config values by resolving config injection patterns and same-file constants.
+
+**Scope**: Resolve ONLY same-file constants. Cross-file imports → mark as `requires_llm_reasoning: true`.
+
+---
+
+#### Step 1: Extract Config Injection Patterns (Language-Agnostic)
+
+**Pattern: Config Value Injection**
+
+Algorithm:
+1. Is there annotation/decorator/call that retrieves config values?
+   - Annotation/decorator name contains: `Value`, `Config`, `Property`, `Env`, `Setting`, `Inject`
+   - Function/method name contains: `getenv`, `get`, `Get`, `env`
+2. Does it have string argument containing config key reference?
+3. Is it assigned to a variable or field?
+
+If steps 1-3 true → Extract: config_key, variable_name, injection_method
+
+**Multi-Language Examples:**
+
+**Java (Spring):**
+```java
+@Value("${http.client.timeout}")
+private int timeout;
+// → config_key: "http.client.timeout", variable: "timeout"
+```
+
+**Java (Quarkus):**
+```java
+@ConfigProperty(name = "http.client.timeout")
+int timeout;
+// → config_key: "http.client.timeout", variable: "timeout"
+```
+
+**Python (environment variables):**
+```python
+timeout = int(os.getenv("HTTP_CLIENT_TIMEOUT", "5000"))
+# → config_key: "HTTP_CLIENT_TIMEOUT", variable: "timeout"
+```
+
+**Python (Django settings):**
+```python
+from django.conf import settings
+timeout = settings.HTTP_CLIENT_TIMEOUT
+# → config_key: "HTTP_CLIENT_TIMEOUT", variable: "timeout"
+```
+
+**Go (Viper):**
+```go
+timeout := viper.GetInt("http.client.timeout")
+// → config_key: "http.client.timeout", variable: "timeout"
+```
+
+**JavaScript/TypeScript:**
+```typescript
+const timeout = parseInt(process.env.HTTP_CLIENT_TIMEOUT || '5000');
+// → config_key: "HTTP_CLIENT_TIMEOUT", variable: "timeout"
+```
+
+**Rust (serde):**
+```rust
+#[serde(rename = "http_client_timeout")]
+timeout: u64
+// → config_key: "http_client_timeout", variable: "timeout"
+```
+
+**Output** (add to calls[] when this variable is used):
+```json
+{
+  "calls": [{
+    "line": 45,
+    "timeout_value_ms": 5000,        // ← Resolved from resilience_config
+    "timeout_source": "config",       // ← Source type
+    "timeout_config_key": "http.client.timeout",  // ← Config key
+    "timeout_variable_name": "timeout"  // ← Variable name
+  }]
+}
+```
+
+---
+
+### 💡 Reference Implementation Example (Optional Guidance)
+
+**Note**: This is ONE possible approach for Java. You are NOT required to follow this exact approach - adapt based on available AST tools and language specifics.
+
+**Example approach for Java:**
+
+Step-by-step (example only):
+
+1. Find annotations where name matches pattern (Value, Config, Property)
+   - Use AST query to locate annotation nodes
+   - Filter by name containing config-related keywords
+
+2. Extract config key from annotation argument
+   - Parse string literal from annotation arguments
+   - Strip placeholder decorators: ${}, #{}, %{}, etc.
+   - Store as config_key
+
+3. Extract variable/field name from declaration
+   - Get identifier from field_declaration or variable_declarator
+   - Store as variable_name
+
+**Tree-Sitter Query (Java):**
+```
+(field_declaration
+  (modifiers
+    (annotation
+      name: (identifier) @annotation.name
+      arguments: (annotation_argument_list
+        (string_literal) @config.key))) @annotation
+  (variable_declarator
+    name: (identifier) @variable.name)) @field
+```
+
+**Key Point**: Use your judgment and adapt to available AST tools, language-specific patterns, and code complexity.
+
+---
+
+#### Step 2: Build Same-File Symbol Table
+
+**For each file**, create a map of variable names to values:
+
+```
+Algorithm:
+1. Extract all constant declarations (static final, const, val)
+2. Extract all @Value annotations
+3. Build symbol table:
+   {
+     "TIMEOUT_MS": {"type": "literal", "value": 5000},
+     "timeout": {"type": "config", "config_key": "feign.client.timeout", "value": 5000}
+   }
+4. Use this table when analyzing calls in the same file
+```
+
+**Example** (Java):
+```java
+public class OrderService {
+    private static final int TIMEOUT_MS = 5000;  // ← Literal constant
+
+    @ConfigProperty(name = "http.client.timeout")
+    private int clientTimeout;  // ← Config-linked variable
+
+    public void createOrder() {
+        httpClient.get(url, TIMEOUT_MS);  // ← Resolve to 5000
+        httpClient.call(request, clientTimeout);  // ← Resolve from config
+    }
+}
+```
+
+**Symbol Table**:
+```json
+{
+  "TIMEOUT_MS": {
+    "type": "literal",
+    "value": 5000,
+    "source": "OrderService.java:3"
+  },
+  "clientTimeout": {
+    "type": "config",
+    "config_key": "http.client.timeout",
+    "value": 5000,
+    "source": "config.yml:http.client.timeout"
+  }
+}
+```
+
+---
+
+#### Step 3: Resolve Call Arguments
+
+**When extracting calls**, check if arguments are variables:
+
+```
+Algorithm:
+1. Extract call arguments from AST
+2. For each argument:
+   a. Is it a literal? (123, "5s") → Extract value directly
+   b. Is it a variable name in symbol table? → Resolve from table
+   c. Is it from another file (ClassName.CONSTANT)? → Mark requires_llm_reasoning: true
+   d. Is it a runtime variable (method param)? → Mark requires_runtime_validation: true
+3. Update calls[] entry with resolution metadata
+```
+
+**Example 1 - Literal Timeout (Multi-Language)**:
+
+**Java:**
+```java
+httpClient.get(url, 5000);  // ← timeout_value_ms: 5000
+```
+
+**Python:**
+```python
+await http_client.get(url, timeout=5.0)  # ← timeout_value_ms: 5000
+```
+
+**Go:**
+```go
+client.Do(req, 5*time.Second)  // ← timeout_value_ms: 5000
+```
+
+**TypeScript:**
+```typescript
+await fetch(url, {timeout: 5000});  // ← timeout_value_ms: 5000
+```
+
+**Output** (same for all):
+```json
+{
+  "timeout_value_ms": 5000,
+  "timeout_source": "inline"
+}
+```
+
+**Example 2 - Same-File Constant (Multi-Language)**:
+
+**Java:**
+```java
+private static final int TIMEOUT_MS = 5000;
+httpClient.get(url, TIMEOUT_MS);  // ← Resolves to 5000
+```
+
+**Python:**
+```python
+TIMEOUT_MS = 5000
+http_client.get(url, timeout=TIMEOUT_MS)  # ← Resolves to 5000
+```
+
+**Go:**
+```go
+const TimeoutMs = 5000
+client.Do(req, TimeoutMs*time.Millisecond)  // ← Resolves to 5000
+```
+
+**TypeScript:**
+```typescript
+const TIMEOUT_MS = 5000;
+await fetch(url, {timeout: TIMEOUT_MS});  // ← Resolves to 5000
+```
+
+**Output** (same for all):
+```json
+{
+  "timeout_value_ms": 5000,
+  "timeout_source": "variable",
+  "timeout_variable_name": "TIMEOUT_MS"
+}
+```
+
+**Example 3 - Config Injection (Multi-Language)**:
+
+**Java:**
+```java
+@ConfigProperty(name = "http.client.timeout")
+private int clientTimeout;
+
+httpClient.get(url, clientTimeout);  // ← Resolves from config
+```
+
+**Python:**
+```python
+client_timeout = int(os.getenv("HTTP_CLIENT_TIMEOUT"))
+http_client.get(url, timeout=client_timeout)  # ← Resolves from env
+```
+
+**Go:**
+```go
+clientTimeout := viper.GetInt("http.client.timeout")
+client.Do(req, clientTimeout*time.Millisecond)  // ← Resolves from config
+```
+
+**TypeScript:**
+```typescript
+const clientTimeout = parseInt(process.env.HTTP_CLIENT_TIMEOUT);
+await fetch(url, {timeout: clientTimeout});  // ← Resolves from env
+```
+
+**Output** (same for all):
+```json
+{
+  "timeout_value_ms": 5000,
+  "timeout_source": "config",
+  "timeout_config_key": "http.client.timeout",
+  "timeout_variable_name": "clientTimeout"
+}
+```
+
+**Example 4 - Cross-File Import (Multi-Language - HARD CASE)**:
+
+**Java:**
+```java
+import com.example.config.AppConstants;
+httpClient.get(url, AppConstants.TIMEOUT);  // ← Different file
+```
+
+**Python:**
+```python
+from config.constants import TIMEOUT
+http_client.get(url, timeout=TIMEOUT)  # ← Different module
+```
+
+**Go:**
+```go
+import "myapp/config"
+client.Do(req, config.Timeout)  // ← Different package
+```
+
+**Output** (same for all):
+```json
+{
+  "timeout_value_ms": null,
+  "timeout_source": "unknown",
+  "timeout_variable_name": "AppConstants.TIMEOUT",
+  "requires_llm_reasoning": true
+}
+```
+
+**Example 5 - Runtime Variable (Multi-Language - HARD CASE)**:
+
+**Java:**
+```java
+public void process(int timeout) {
+    httpClient.get(url, timeout);  // ← Method parameter
+}
+```
+
+**Python:**
+```python
+def process(timeout: int):
+    http_client.get(url, timeout=timeout)  # ← Function parameter
+```
+
+**Go:**
+```go
+func process(timeout int) {
+    client.Do(req, timeout)  // ← Function parameter
+}
+```
+
+**Output** (same for all):
+```json
+{
+  "timeout_value_ms": null,
+  "timeout_source": "runtime",
+  "timeout_variable_name": "timeout",
+  "requires_runtime_validation": true
+}
+```
+
+---
+
+#### Step 4: Update calls[] Schema
+
+**Add new fields** to calls[] entries:
+
+```json
+{
+  "calls": [{
+    "line": 45,
+    "receiver_type": "HttpClient",
+    "method": "get",
+
+    // Existing fields
+    "has_timeout": true,
+    "timeout_value_ms": 5000,
+
+    // NEW: Resolution metadata
+    "timeout_source": "config",  // inline | variable | config | unknown | runtime
+    "timeout_config_key": "feign.client.timeout",  // Only if source=config
+    "timeout_variable_name": "feignTimeout",  // Variable/constant name
+    "requires_llm_reasoning": false,  // true if cross-file import
+    "requires_runtime_validation": false  // true if runtime variable
+  }]
+}
+```
+
+---
+
+#### Step 5: Handling Hard Cases
+
+**Cross-File Imports** (5% of cases):
+- Flag: `requires_llm_reasoning: true`
+- Risk-analyzer will use LLM to reason about the value
+- Conservative recommendation: "Verify constant is 5-30s"
+
+**Runtime Variables** (10% of cases):
+- Flag: `requires_runtime_validation: true`
+- Risk-analyzer will recommend runtime testing
+- Example: "Timeout is a method parameter - verify all callers pass 5-30s"
+
+**Config Key Not Found**:
+- `timeout_value_ms: null`
+- `timeout_config_key: "missing.key"`
+- Risk-analyzer will flag: "Config key not found in application.yml"
+
+---
+
+### Phase 3: Cross-Configuration Validation
+
+**Goal**: Detect configuration mismatches that create failure modes.
+
+**When**: After extracting all facts and configs from ALL files in the PR.
+
+**Output**: Populate `config_validation_findings[]` array with discovered issues.
+
+---
+
+#### Validation 1: Retry Timeout Amplification
+
+**Pattern**: Retry count × timeout exceeds acceptable limit (e.g., 60s SLA)
+
+**Algorithm**:
+```
+For each call with retry + timeout:
+1. Get retry_count from call (annotation or config)
+2. Get timeout_value_ms from call
+3. Calculate: total_timeout = retry_count × timeout_value_ms
+4. Check: total_timeout > 60000ms (60s)?
+5. If YES → Add finding
+
+Example:
+  retry_count: 5
+  timeout_value_ms: 10000 (10s)
+  total_timeout: 50000ms (50s)
+  Finding: "5 retries × 10s timeout = 50s total latency risk"
+```
+
+**Output**:
+```json
+{
+  "config_validation_findings": [
+    {
+      "type": "retry_timeout_amplification",
+      "severity": "MEDIUM",
+      "file": "src/services/OrderService.java",
+      "line": 45,
+      "retry_count": 5,
+      "timeout_ms": 10000,
+      "total_timeout_ms": 50000,
+      "recommendation": "Reduce retry count to 3 or timeout to 5s to keep total latency under 30s",
+      "impact": "User request may hang for 50s during service outage"
+    }
+  ]
+}
+```
+
+---
+
+#### Validation 2: Circuit Breaker Timing Mismatch
+
+**Pattern**: Circuit breaker wait duration < operation timeout
+
+**Algorithm**:
+```
+For each call with circuit breaker:
+1. Get circuit breaker config from resilience_config or annotation
+2. Get wait_duration_ms (how long CB stays open)
+3. Get timeout_value_ms from call
+4. Check: wait_duration_ms < timeout_value_ms?
+5. If YES → Add finding
+
+Example:
+  Circuit breaker wait: 30s
+  Operation timeout: 60s
+  Finding: "CB will retry before timeout completes, wasting resources"
+```
+
+**Output**:
+```json
+{
+  "config_validation_findings": [
+    {
+      "type": "circuit_breaker_timing_mismatch",
+      "severity": "MEDIUM",
+      "file": "src/services/OrderService.java",
+      "line": 45,
+      "circuit_breaker_wait_ms": 30000,
+      "operation_timeout_ms": 60000,
+      "recommendation": "Set operation timeout to 5-10s or increase CB wait to 90s",
+      "impact": "Circuit breaker will retry slow operations before they timeout, wasting threads"
+    }
+  ]
+}
+```
+
+---
+
+#### Validation 3: Thread Pool Sizing vs Connection Pool
+
+**Pattern**: Thread pool size > connection pool size (resource exhaustion)
+
+**Algorithm**:
+```
+For each service:
+1. Get thread_pool.max_pool_size from resilience_config
+2. Get connection_pool.max_connections from resilience_config
+3. Check: max_pool_size > max_connections?
+4. If YES → Add finding
+
+Example:
+  Thread pool: 50 threads
+  Connection pool: 10 connections
+  Finding: "50 threads competing for 10 connections = thread starvation"
+```
+
+**Output**:
+```json
+{
+  "config_validation_findings": [
+    {
+      "type": "thread_pool_vs_connection_pool",
+      "severity": "HIGH",
+      "thread_pool_size": 50,
+      "connection_pool_size": 10,
+      "source": "application.yml",
+      "recommendation": "Increase connection pool to 50 or reduce thread pool to 10-20",
+      "impact": "40 threads will block waiting for connections, causing request queue buildup"
+    }
+  ]
+}
+```
+
+---
+
+#### Step: When to Run Cross-Validation
+
+**Trigger**: After ALL files in PR have been processed (Phases 2a-2d complete).
+
+**Input**:
+- All `calls[]` from all fact files
+- Global `resilience_config` object
+- All `async_communication[]` entries
+
+**Output**: Single `config_validation_findings[]` array (can be in a separate file or aggregated).
+
+**Performance**: Run validation once at the end, not per file.
+
+---
+
+#### Error Handling for Cross-Validation
+
+**If config values are null** (could not resolve):
+- Skip validation for that pattern
+- Log warning: "Skipped retry timeout validation for OrderService.java:45 - timeout value unknown"
+
+**If config keys not found**:
+- Add finding:
+```json
+{
+  "type": "config_key_missing",
+  "severity": "MEDIUM",
+  "file": "src/services/OrderService.java",
+  "line": 45,
+  "config_key": "feign.client.timeout",
+  "recommendation": "Add feign.client.timeout to application.yml or use inline timeout value"
+}
+```
+
+**If cross-file constant** (`requires_llm_reasoning: true`):
+- Skip validation
+- Risk-analyzer will handle with LLM reasoning
+
+---
+
 ### 🔧 How to Extract Facts: Tree-Sitter Query Guide
 
 **IMPORTANT**: All fact extraction MUST use tree-sitter AST queries, NOT text/grep search.

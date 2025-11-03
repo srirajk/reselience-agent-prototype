@@ -20,7 +20,18 @@ allowed-tools: [Bash]
 
 **Purpose:** Identify files changed frequently (instability indicator)
 
-**Task:** Count how many commits modified this file in the last 30 days
+**Task:** Count how many commits modified this file in the last 30 days **BEFORE the current PR**
+
+**⚠️ CRITICAL: Temporal Filtering Required**
+```bash
+# Load PR timestamp from metadata
+PR_TIMESTAMP=$(jq -r '.pr_timestamp' output/pr-{{PR_NUMBER}}/metadata.json)
+
+# Count commits on main branch BEFORE PR, within last 30 days
+git log main --since="30 days ago" --until="${PR_TIMESTAMP}" --oneline -- <file> | wc -l
+```
+
+**Why:** Only analyze historical commits before the current PR to avoid temporal contamination (using future data to predict past risk).
 
 **Interpretation:**
 - **0-3 commits** = Stable file (LOW risk)
@@ -36,7 +47,16 @@ allowed-tools: [Bash]
 
 **Purpose:** Detect coordination risk from multiple contributors
 
-**Task:** Identify how many unique authors have modified this file in the last 3 months
+**Task:** Identify how many unique authors have modified this file in the last 3 months **BEFORE the current PR**
+
+**⚠️ CRITICAL: Temporal Filtering Required**
+```bash
+# Load PR timestamp from metadata
+PR_TIMESTAMP=$(jq -r '.pr_timestamp' output/pr-{{PR_NUMBER}}/metadata.json)
+
+# Count unique authors on main branch BEFORE PR, within last 3 months
+git log main --since="3 months ago" --until="${PR_TIMESTAMP}" --format="%ae" -- <file> | sort -u | wc -l
+```
 
 **Interpretation:**
 - **1-2 authors** = Good ownership (LOW risk)
@@ -51,7 +71,18 @@ allowed-tools: [Bash]
 
 **Purpose:** Identify files involved in production rollbacks/hotfixes
 
-**Task:** Search git commit history for messages containing keywords like "revert", "rollback", "hotfix", or "emergency" that affected this file
+**Task:** Search git commit history **BEFORE the current PR** for messages containing keywords like "revert", "rollback", "hotfix", or "emergency" that affected this file
+
+**⚠️ CRITICAL: Temporal Filtering Required**
+```bash
+# Load PR timestamp from metadata
+PR_TIMESTAMP=$(jq -r '.pr_timestamp' output/pr-{{PR_NUMBER}}/metadata.json)
+
+# Search commits on main branch BEFORE PR timestamp
+git log main --until="${PR_TIMESTAMP}" --grep="revert\|rollback\|hotfix\|emergency" --oneline -- <file>
+```
+
+**❌ DO NOT USE:** `git log --all` (includes future PR branches)
 
 **Interpretation:**
 - **0 matches** = No rollback history
@@ -66,7 +97,16 @@ allowed-tools: [Bash]
 
 **Purpose:** Calculate lines changed (churn magnitude)
 
-**Task:** Calculate the total number of lines added and deleted in this file over the last 30 days
+**Task:** Calculate the total number of lines added and deleted in this file over the last 30 days **BEFORE the current PR**
+
+**⚠️ CRITICAL: Temporal Filtering Required**
+```bash
+# Load PR timestamp from metadata
+PR_TIMESTAMP=$(jq -r '.pr_timestamp' output/pr-{{PR_NUMBER}}/metadata.json)
+
+# Calculate lines changed on main branch BEFORE PR, within last 30 days
+git log main --since="30 days ago" --until="${PR_TIMESTAMP}" --numstat -- <file> | awk '{added+=$1; deleted+=$2} END {print added+deleted}'
+```
 
 **Interpretation:**
 - **0-100 lines** = Small changes (LOW risk)
@@ -82,7 +122,16 @@ allowed-tools: [Bash]
 
 **Purpose:** Measure code quality via bug fix frequency
 
-**Task:** Count commits in the last 60 days that mention "fix", "bug", "issue", or "defect" in their messages for this file
+**Task:** Count commits in the last 60 days **BEFORE the current PR** that mention "fix", "bug", "issue", or "defect" in their messages for this file
+
+**⚠️ CRITICAL: Temporal Filtering Required**
+```bash
+# Load PR timestamp from metadata
+PR_TIMESTAMP=$(jq -r '.pr_timestamp' output/pr-{{PR_NUMBER}}/metadata.json)
+
+# Count bug fix commits on main branch BEFORE PR, within last 60 days
+git log main --since="60 days ago" --until="${PR_TIMESTAMP}" --grep="fix\|bug\|issue\|defect" -i --oneline -- <file> | wc -l
+```
 
 **Interpretation:**
 - **0-1 fixes** = Stable code quality
@@ -97,7 +146,16 @@ allowed-tools: [Bash]
 
 **Purpose:** Identify files with complex merge history
 
-**Task:** Count merge commits that affected this file in the last 2 months
+**Task:** Count merge commits that affected this file in the last 2 months **BEFORE the current PR**
+
+**⚠️ CRITICAL: Temporal Filtering Required**
+```bash
+# Load PR timestamp from metadata
+PR_TIMESTAMP=$(jq -r '.pr_timestamp' output/pr-{{PR_NUMBER}}/metadata.json)
+
+# Count merge commits on main branch BEFORE PR, within last 2 months
+git log main --since="2 months ago" --until="${PR_TIMESTAMP}" --merges --oneline -- <file> | wc -l
+```
 
 **Interpretation:**
 - **0-2 merges** = Normal collaboration
@@ -154,11 +212,17 @@ Base Risk Score (from static analysis)
 - Handle missing files gracefully (new files have no git history)
 - Cache results to avoid redundant git calls
 - Consider context (1 commit from 1 author in a 5-year-old file is stable!)
+- **USE TEMPORAL FILTERING: Only analyze commits BEFORE current PR timestamp** ⚠️
+- Load PR timestamp from metadata.json before running git queries
+- Use `main --until="${PR_TIMESTAMP}"` for all git log commands
 
 ### ❌ Don't:
 - Fail entire analysis if git commands error
 - Run git commands on files outside the repository
 - Make assumptions about git configuration
+- **Use `--all` flag or search future branches** ⚠️
+- Include commits from PR branches that haven't been merged yet
+- Analyze data from future PRs (temporal contamination)
 
 ---
 

@@ -1,6 +1,6 @@
 {
-  "$schema": "Enhanced fact extraction schema for PR analysis v2.0 - Pattern-based async/pub-sub detection",
-  "$comment": "This schema describes semantic facts extracted from code files via AST parsing. Uses pattern-based detection (language/framework-agnostic) instead of hardcoded annotations.",
+  "$schema": "Enhanced fact extraction schema for PR analysis v2.1 - Pattern-based async detection + Config parsing + Variable resolution",
+  "$comment": "This schema describes semantic facts extracted from code files via AST parsing. v2.0: Pattern-based detection. v2.1: Config file parsing, variable resolution, cross-configuration validation.",
 
   "file": "string - relative path to file from repository root (e.g., 'src/services/OrderService.java')",
   "language": "string - programming language (java|python|typescript|kotlin|javascript|go|rust)",
@@ -14,6 +14,49 @@
       "external_service": "boolean - true if dependency connects to external service (API, MQ, DB), false otherwise"
     }
   ],
+
+  "_comment_resilience_config": "NEW in v2.1: Global resilience configuration extracted from config files (application.yml, .env, etc.)",
+  "resilience_config": {
+    "source_files": ["array of strings - config file names (e.g., ['application.yml', 'resilience4j.yml'])"],
+    "timeouts": {
+      "config.key.name": {
+        "value_ms": "number - timeout value in milliseconds",
+        "source": "string - where this config comes from (e.g., 'config.yml:http.client.timeout', 'settings.py:HTTP_TIMEOUT', '.env:DATABASE_TIMEOUT')",
+        "raw_value": "string - original value as written in config (e.g., '5s', '30000')"
+      }
+    },
+    "retry_policies": {
+      "config.key.name": {
+        "max_attempts": "number - maximum retry attempts",
+        "backoff_ms": "number - backoff interval in milliseconds",
+        "source": "string - where this config comes from",
+        "backoff_strategy": "string - backoff strategy (fixed|linear|exponential)"
+      }
+    },
+    "circuit_breakers": {
+      "config.key.name": {
+        "failure_rate_threshold": "number - percentage of failures to open circuit (e.g., 50.0 for 50%)",
+        "wait_duration_ms": "number - time to wait in open state before half-open",
+        "sliding_window_size": "number - number of calls to track for failure rate",
+        "source": "string - where this config comes from"
+      }
+    },
+    "connection_pools": {
+      "config.key.name": {
+        "max_connections": "number - maximum connections in pool",
+        "connection_timeout_ms": "number - timeout to acquire connection",
+        "source": "string - where this config comes from"
+      }
+    },
+    "thread_pools": {
+      "config.key.name": {
+        "core_pool_size": "number - core number of threads",
+        "max_pool_size": "number - maximum number of threads",
+        "queue_capacity": "number - queue size for pending tasks",
+        "source": "string - where this config comes from"
+      }
+    }
+  },
 
   "calls": [
     {
@@ -46,6 +89,13 @@
       "timeout_value_ms": "number - actual timeout value in milliseconds, null if not configured",
       "retry_count": "number - number of retry attempts configured, null if not configured",
       "retry_backoff_ms": "number - backoff interval between retries in milliseconds, null if not configured",
+
+      "_comment_variable_resolution": "NEW in v2.1: Variable resolution and config linking metadata",
+      "timeout_source": "string - how timeout value was resolved (inline|variable|config|unknown|runtime)",
+      "timeout_config_key": "string - config key name if source=config (e.g., 'feign.client.timeout'), null otherwise",
+      "timeout_variable_name": "string - variable/constant name if source=variable or config, null otherwise",
+      "requires_llm_reasoning": "boolean - true if value uses cross-file import (e.g., Constants.TIMEOUT from different file)",
+      "requires_runtime_validation": "boolean - true if value is a runtime variable (method parameter, injected value)",
 
       "_comment_new_circuit_breaker": "NEW in v2.0: Circuit breaker configuration details",
       "circuit_breaker_config": {
@@ -156,6 +206,27 @@
       "breaking": "boolean - true if this change breaks existing consumers (e.g., required field removed)",
       "backward_compatible": "boolean - true if old consumers can handle new schema",
       "forward_compatible": "boolean - true if new consumers can handle old schema"
+    }
+  ],
+
+  "_comment_config_validation_findings": "NEW in v2.1: Cross-configuration validation findings (retry amplification, CB timing, pool sizing)",
+  "config_validation_findings": [
+    {
+      "type": "string - validation type (retry_timeout_amplification|circuit_breaker_timing_mismatch|thread_pool_vs_connection_pool|config_key_missing)",
+      "severity": "string - severity level (HIGH|MEDIUM|LOW)",
+      "file": "string - file path where issue occurs (null for global config issues)",
+      "line": "number - line number where issue occurs (null for global config issues)",
+      "retry_count": "number - retry attempts (only for retry_timeout_amplification)",
+      "timeout_ms": "number - timeout value (only for retry_timeout_amplification and circuit_breaker_timing_mismatch)",
+      "total_timeout_ms": "number - total latency (retry_count × timeout_ms, only for retry_timeout_amplification)",
+      "circuit_breaker_wait_ms": "number - circuit breaker wait duration (only for circuit_breaker_timing_mismatch)",
+      "operation_timeout_ms": "number - operation timeout (only for circuit_breaker_timing_mismatch)",
+      "thread_pool_size": "number - max thread pool size (only for thread_pool_vs_connection_pool)",
+      "connection_pool_size": "number - max connection pool size (only for thread_pool_vs_connection_pool)",
+      "config_key": "string - missing config key (only for config_key_missing)",
+      "source": "string - config file source (e.g., 'application.yml')",
+      "recommendation": "string - actionable recommendation to fix the issue",
+      "impact": "string - description of production impact if not fixed"
     }
   ],
 

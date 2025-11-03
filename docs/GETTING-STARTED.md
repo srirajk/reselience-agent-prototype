@@ -144,62 +144,54 @@ When you run this command, the orchestrator:
 
 ---
 
-## Step 4: Grant Necessary Permissions
+## Step 4: Configure Permissions (Optional - For Autonomous Runs)
 
-During execution, Claude will request permissions for various operations. Understanding why these are needed helps you make informed decisions.
+By default, Claude Code will request permissions during execution. If you want to run the analysis autonomously without permission prompts, you can pre-configure permissions.
 
-### 4.1 Bash Tool Permission
+### 4.1 Option A: Pre-Configure Permissions (Recommended)
 
-**Request:**
-```
-Claude is requesting permission to use Bash tool
-```
+**For autonomous execution without prompts:**
 
-**Why Needed:**
-- Navigate to repository directory
-- Run git commands (fetch, checkout, diff)
-- Create output directories
-- Save analysis results
+```bash
+# macOS/Linux
+cp claude_permissions/settings.local.json ~/.claude/settings.local.json
 
-**Safe to Grant:** Yes - The agent only runs read operations and writes to the `output/` directory within the project.
-
-### 4.2 Read Permission
-
-**Request:**
-```
-Claude is requesting permission to read files in:
-/path/to/microservices-demo/
+# Windows
+copy claude_permissions\settings.local.json.tmpl %USERPROFILE%\.claude\settings.local.json
 ```
 
-**Why Needed:**
-- Read PR diff to analyze code changes
-- Examine changed files for resilience patterns
-- Check git history for risk metrics
+**What this does:**
+- Pre-approves all tools needed for `/analyze-pr` workflow
+- Enables autonomous execution without manual permission grants
+- All operations are safe (read-only except for writing to `output/` directory)
 
-**Safe to Grant:** Yes - Read-only operations on the target repository.
+**Details:** See `claude_permissions/PERMISSIONS.md` for complete documentation on what each permission does.
 
-### 4.3 Write Permission
+### 4.2 Option B: Grant Permissions During Execution
 
-**Request:**
-```
-Claude is requesting permission to write to:
-output/pr-2876/
-```
+If you prefer to review permissions as they're requested, Claude Code will prompt you during execution.
 
-**Why Needed:**
-- Save analysis results (JSON, Markdown)
-- Store PR diff for reference
-- Create metadata file
+**Bash Tool Permission:**
+- **Why:** Git operations (fetch, checkout, diff), directory creation
+- **Safe:** Read-only git operations, writes only to `output/` directory
 
-**Safe to Grant:** Yes - Writes are limited to the `output/` directory.
+**Read Permission:**
+- **Why:** Read PR diff, analyze code changes, check git history
+- **Safe:** Read-only operations on the target repository
+
+**Write Permission:**
+- **Why:** Save analysis results (JSON, Markdown files)
+- **Safe:** Writes are limited to the `output/` directory
 
 ### Permission Summary
 
-| Permission | Purpose | Risk Level |
-|-----------|---------|------------|
-| Bash | Git operations, directory navigation | Low (read-only git ops) |
-| Read | Analyze code changes, git history | Low (read-only) |
-| Write | Save results to output/ | Low (isolated directory) |
+| Permission | Purpose | Risk Level | Pre-Approved? |
+|-----------|---------|------------|---------------|
+| Bash | Git operations, directory navigation | Low (read-only git ops) | ✅ (if using Option A) |
+| Read | Analyze code changes, git history | Low (read-only) | ✅ (if using Option A) |
+| Write | Save results to output/ | Low (isolated directory) | ✅ (if using Option A) |
+
+**Platform Compatibility:** The permissions template works on Windows, macOS, Linux, and WSL. Windows users need Git for Windows installed.
 
 ---
 

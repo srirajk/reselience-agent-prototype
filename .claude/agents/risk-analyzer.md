@@ -863,15 +863,22 @@ You have access to the **Git Risk Analysis** skill which provides historical con
 
 **🔗 How to integrate**:
 
+**⚠️ CRITICAL: Use temporal filtering to avoid contamination with future data**
+
 ```bash
-# Check if file is a hotspot (high churn)
-git log --since="1 month ago" --oneline -- src/services/PaymentService.java | wc -l
+# IMPORTANT: Load PR timestamp first
+PR_TIMESTAMP=$(jq -r '.pr_timestamp' output/pr-{{arg2}}/metadata.json)
+
+# Check if file is a hotspot (high churn) - ONLY BEFORE PR TIMESTAMP
+git log main --since="1 month ago" --until="${PR_TIMESTAMP}" --oneline -- src/services/PaymentService.java | wc -l
 # Output: 18 commits → HOTSPOT! Add +1 severity level
 
-# Check for rollback history
-git log --all --grep="revert\|rollback" --oneline -- src/services/PaymentService.java
+# Check for rollback history - ONLY BEFORE PR TIMESTAMP
+git log main --until="${PR_TIMESTAMP}" --grep="revert\|rollback" --oneline -- src/services/PaymentService.java
 # Output: 2 rollback commits found → Add +1 severity level
 ```
+
+**❌ DO NOT USE:** `git log --all` (includes future PR branches, causes temporal contamination)
 
 **➕ Add git metrics to findings**:
 ```json

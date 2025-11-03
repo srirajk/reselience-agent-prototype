@@ -45,10 +45,26 @@ Coordinate a 3-phase analysis:
 7. Save PR metadata to `{output_dir}/pr-{{arg2}}/metadata.json`
 
 **🔧 How to accomplish this:**
-- Use your **Bash tool** to navigate directories and run git commands
-- Use your **git skill** to handle repository operations
-- Search for the repository in: current directory, `../{{arg1}}`, `workspace/{{arg1}}`
-- Fetch PR using: `git fetch origin pull/{{arg2}}/head:pr-{{arg2}}`
+- Repository location: `workspace/{{arg1}}/`
+- Navigate directly: `cd workspace/{{arg1}}` (if this fails, repository doesn't exist → STOP)
+- All git commands must be run from this directory
+
+**⚠️ IDEMPOTENCY: Check before fetching**
+```bash
+# Only fetch if PR branch doesn't already exist
+if ! git rev-parse --verify pr-{{arg2}} >/dev/null 2>&1; then
+  git fetch origin pull/{{arg2}}/head:pr-{{arg2}}
+else
+  echo "Branch pr-{{arg2}} already exists, skipping fetch"
+fi
+```
+
+**⚠️ TEMPORAL FILTERING: Capture PR timestamp**
+```bash
+# After fetching/verifying PR branch exists, capture timestamp for git analysis
+PR_TIMESTAMP=$(git log -1 --format=%ct pr-{{arg2}})
+```
+
 - Detect base branch autonomously (check for main vs master)
 - Generate diff and save to `{output_dir}/pr-{{arg2}}/pr.diff`
 
@@ -58,9 +74,12 @@ Coordinate a 3-phase analysis:
   "pr_number": "{{arg2}}",
   "repository": "{{arg1}}",
   "analyzed_at": "2025-10-19T14:30:00Z",
-  "base_branch": "main"
+  "base_branch": "main",
+  "pr_timestamp": 1729350600
 }
 ```
+
+**Note:** `pr_timestamp` is Unix epoch time - used by git-risk-analysis skill to filter historical commits BEFORE this PR.
 
 **📢 Present status to user:**
 ```
@@ -74,10 +93,25 @@ Starting analysis...
 ```
 
 **❌ If repository not found:**
-Report clear error with searched locations and suggest cloning the repo.
+```
+ERROR: Repository '{{arg1}}' not found in workspace/
+
+Expected location: workspace/{{arg1}}/
+Please clone the repository first:
+  cd workspace && git clone <repo-url> {{arg1}}
+
+Cannot proceed with PR analysis.
+```
 
 **❌ If PR not found:**
-Report that PR #{{arg2}} doesn't exist or cannot be fetched from origin.
+```
+ERROR: PR #{{arg2}} not found in repository {{arg1}}
+
+Attempted: git fetch origin pull/{{arg2}}/head:pr-{{arg2}}
+Please verify the PR number exists on GitHub.
+
+Cannot proceed with PR analysis.
+```
 
 ---
 
@@ -252,14 +286,14 @@ To review final report:
 ## 🚨 Error Handling Guidelines
 
 **❌ Repository not found:**
-- Search in multiple locations autonomously
-- Provide helpful error with searched paths
-- Suggest: `git clone https://github.com/org/{{arg1}}.git`
+- STOP immediately if `cd workspace/{{arg1}}` fails
+- Do NOT search multiple locations
+- Do NOT attempt to clone
+- Display error message (see Phase 1)
 
 **❌ PR not found:**
-- Attempt to fetch from origin
-- Check if branch already exists locally
-- Provide clear error if PR doesn't exist on remote
+- STOP immediately if `git fetch origin pull/{{arg2}}/head:pr-{{arg2}}` fails
+- Display error message (see Phase 1)
 
 **❌ Agent failures:**
 - Display which agent failed (risk-analyzer or critic-agent)
