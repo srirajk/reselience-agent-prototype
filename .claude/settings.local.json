@@ -74,6 +74,12 @@
     ],
     "ask": [],
     "enableAllProjectMcpServers": true,
-    "enabledMcpjsonServers": ["tree_sitter"]
-  }
+    "enabledMcpjsonServers": [
+      "tree_sitter"
+    ]
+  },
+  "enableAllProjectMcpServers": true,
+  "enabledMcpjsonServers": [
+    "tree_sitter"
+  ]
 }

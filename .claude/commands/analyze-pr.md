@@ -46,27 +46,66 @@ Coordinate a 3-phase analysis:
 
 **🔧 How to accomplish this:**
 - Repository location: `workspace/{{arg1}}/`
-- Navigate directly: `cd workspace/{{arg1}}` (if this fails, repository doesn't exist → STOP)
-- All git commands must be run from this directory
+- All commands run from project root (do NOT cd into workspace repo)
+- Use `git -C workspace/{{arg1}}` for all git operations
+- Verify repository exists by checking if `workspace/{{arg1}}/.git` directory exists (if not, STOP)
 
 **⚠️ IDEMPOTENCY: Check before fetching**
+
+**CRITICAL: Execute as separate sequential commands. Do NOT combine with &&, ||, or other operators.**
+
+Check if PR branch exists:
 ```bash
-# Only fetch if PR branch doesn't already exist
-if ! git rev-parse --verify pr-{{arg2}} >/dev/null 2>&1; then
-  git fetch origin pull/{{arg2}}/head:pr-{{arg2}}
-else
-  echo "Branch pr-{{arg2}} already exists, skipping fetch"
-fi
+git -C workspace/{{arg1}} rev-parse --verify pr-{{arg2}}
+```
+
+If the above command succeeds (branch exists):
+- Skip fetch, branch already available locally
+
+If the above command fails (branch doesn't exist):
+```bash
+git -C workspace/{{arg1}} fetch origin pull/{{arg2}}/head:pr-{{arg2}}
 ```
 
 **⚠️ TEMPORAL FILTERING: Capture PR timestamp**
 ```bash
 # After fetching/verifying PR branch exists, capture timestamp for git analysis
-PR_TIMESTAMP=$(git log -1 --format=%ct pr-{{arg2}})
+git -C workspace/{{arg1}} log -1 --format=%ct pr-{{arg2}}
+```
+Store this timestamp value in metadata.json for use by risk-analyzer and git-risk-analysis skill.
+
+**⚠️ BASE BRANCH DETECTION:**
+
+**CRITICAL: Execute as TWO separate bash commands. Do NOT combine with &&, ||, or other operators.**
+
+**Step 1:** Check for main branch:
+```bash
+git -C workspace/{{arg1}} rev-parse --verify main
 ```
 
-- Detect base branch autonomously (check for main vs master)
-- Generate diff and save to `{output_dir}/pr-{{arg2}}/pr.diff`
+If the above command succeeds, base branch is "main". Proceed to PR diff generation.
+
+If the above command fails, proceed to Step 2.
+
+**Step 2:** Check for master branch:
+```bash
+git -C workspace/{{arg1}} rev-parse --verify master
+```
+
+If this succeeds, base branch is "master". Proceed to PR diff generation.
+
+If this fails, STOP with error: "Neither main nor master branch found."
+
+**⚠️ GENERATE PR DIFF:**
+
+**CRITICAL: Run git diff as a single command. Use Write tool to save output. Do NOT use >, &&, or pipe operators.**
+
+Generate diff between base branch and PR branch:
+```bash
+git -C workspace/{{arg1}} diff {base_branch}...pr-{{arg2}}
+```
+
+Capture the output and save it to `{output_dir}/pr-{{arg2}}/pr.diff` using the Write tool.
 
 **📋 Expected metadata.json format:**
 ```json

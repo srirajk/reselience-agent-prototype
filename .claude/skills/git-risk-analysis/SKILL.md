@@ -16,6 +16,14 @@ allowed-tools: [Bash]
 
 ## Git Metrics Analysis
 
+**🚨 CRITICAL EXECUTION RULES:**
+- **ALL git commands must run from project root** using `git -C workspace/{{REPO}}`
+- **Do NOT use pipe operators** (`|`), compound operators (`&&`, `||`), or redirects (`>`, `2>`)
+- **Do NOT use command substitution** (`$(...)`) for variable assignments
+- **Do NOT use text processing tools** (`wc`, `tr`, `awk`, `sed`, `sort`)
+- **Agent must count lines, deduplicate values, and parse output directly**
+- **Use Read tool** to load metadata.json instead of `jq` command
+
 ### 1. Detect Code Hotspots (High Churn Rate)
 
 **Purpose:** Identify files changed frequently (instability indicator)
@@ -23,13 +31,15 @@ allowed-tools: [Bash]
 **Task:** Count how many commits modified this file in the last 30 days **BEFORE the current PR**
 
 **⚠️ CRITICAL: Temporal Filtering Required**
-```bash
-# Load PR timestamp from metadata
-PR_TIMESTAMP=$(jq -r '.pr_timestamp' output/pr-{{PR_NUMBER}}/metadata.json)
 
-# Count commits on main branch BEFORE PR, within last 30 days
-git log main --since="30 days ago" --until="${PR_TIMESTAMP}" --oneline -- <file> | wc -l
+Use Read tool to load `output/pr-{{PR_NUMBER}}/metadata.json` and extract the `pr_timestamp` value.
+
+Then run:
+```bash
+git -C workspace/{{REPO}} log main --since="30 days ago" --until="@{pr_timestamp}" --oneline -- <file>
 ```
+
+Count the number of output lines in the agent to get the churn metric.
 
 **Why:** Only analyze historical commits before the current PR to avoid temporal contamination (using future data to predict past risk).
 
@@ -50,13 +60,15 @@ git log main --since="30 days ago" --until="${PR_TIMESTAMP}" --oneline -- <file>
 **Task:** Identify how many unique authors have modified this file in the last 3 months **BEFORE the current PR**
 
 **⚠️ CRITICAL: Temporal Filtering Required**
-```bash
-# Load PR timestamp from metadata
-PR_TIMESTAMP=$(jq -r '.pr_timestamp' output/pr-{{PR_NUMBER}}/metadata.json)
 
-# Count unique authors on main branch BEFORE PR, within last 3 months
-git log main --since="3 months ago" --until="${PR_TIMESTAMP}" --format="%ae" -- <file> | sort -u | wc -l
+Use Read tool to load `output/pr-{{PR_NUMBER}}/metadata.json` and extract the `pr_timestamp` value.
+
+Then run:
+```bash
+git -C workspace/{{REPO}} log main --since="3 months ago" --until="@{pr_timestamp}" --format="%ae" -- <file>
 ```
+
+Deduplicate the output and count unique entries in the agent to get the authorship metric.
 
 **Interpretation:**
 - **1-2 authors** = Good ownership (LOW risk)
@@ -74,13 +86,15 @@ git log main --since="3 months ago" --until="${PR_TIMESTAMP}" --format="%ae" -- 
 **Task:** Search git commit history **BEFORE the current PR** for messages containing keywords like "revert", "rollback", "hotfix", or "emergency" that affected this file
 
 **⚠️ CRITICAL: Temporal Filtering Required**
-```bash
-# Load PR timestamp from metadata
-PR_TIMESTAMP=$(jq -r '.pr_timestamp' output/pr-{{PR_NUMBER}}/metadata.json)
 
-# Search commits on main branch BEFORE PR timestamp
-git log main --until="${PR_TIMESTAMP}" --grep="revert\|rollback\|hotfix\|emergency" --oneline -- <file>
+Use Read tool to load `output/pr-{{PR_NUMBER}}/metadata.json` and extract the `pr_timestamp` value.
+
+Then run:
+```bash
+git -C workspace/{{REPO}} log main --until="@{pr_timestamp}" --grep="revert\|rollback\|hotfix\|emergency" --oneline -- <file>
 ```
+
+Count the number of output lines to determine if the file has rollback history.
 
 **❌ DO NOT USE:** `git log --all` (includes future PR branches)
 
@@ -100,13 +114,15 @@ git log main --until="${PR_TIMESTAMP}" --grep="revert\|rollback\|hotfix\|emergen
 **Task:** Calculate the total number of lines added and deleted in this file over the last 30 days **BEFORE the current PR**
 
 **⚠️ CRITICAL: Temporal Filtering Required**
-```bash
-# Load PR timestamp from metadata
-PR_TIMESTAMP=$(jq -r '.pr_timestamp' output/pr-{{PR_NUMBER}}/metadata.json)
 
-# Calculate lines changed on main branch BEFORE PR, within last 30 days
-git log main --since="30 days ago" --until="${PR_TIMESTAMP}" --numstat -- <file> | awk '{added+=$1; deleted+=$2} END {print added+deleted}'
+Use Read tool to load `output/pr-{{PR_NUMBER}}/metadata.json` and extract the `pr_timestamp` value.
+
+Then run:
+```bash
+git -C workspace/{{REPO}} log main --since="30 days ago" --until="@{pr_timestamp}" --numstat -- <file>
 ```
+
+Parse the numstat output in the agent, sum the additions and deletions columns to calculate total lines changed.
 
 **Interpretation:**
 - **0-100 lines** = Small changes (LOW risk)
@@ -125,13 +141,15 @@ git log main --since="30 days ago" --until="${PR_TIMESTAMP}" --numstat -- <file>
 **Task:** Count commits in the last 60 days **BEFORE the current PR** that mention "fix", "bug", "issue", or "defect" in their messages for this file
 
 **⚠️ CRITICAL: Temporal Filtering Required**
-```bash
-# Load PR timestamp from metadata
-PR_TIMESTAMP=$(jq -r '.pr_timestamp' output/pr-{{PR_NUMBER}}/metadata.json)
 
-# Count bug fix commits on main branch BEFORE PR, within last 60 days
-git log main --since="60 days ago" --until="${PR_TIMESTAMP}" --grep="fix\|bug\|issue\|defect" -i --oneline -- <file> | wc -l
+Use Read tool to load `output/pr-{{PR_NUMBER}}/metadata.json` and extract the `pr_timestamp` value.
+
+Then run:
+```bash
+git -C workspace/{{REPO}} log main --since="60 days ago" --until="@{pr_timestamp}" --grep="fix\|bug\|issue\|defect" -i --oneline -- <file>
 ```
+
+Count the number of output lines in the agent to get the bug fix rate.
 
 **Interpretation:**
 - **0-1 fixes** = Stable code quality
@@ -149,13 +167,15 @@ git log main --since="60 days ago" --until="${PR_TIMESTAMP}" --grep="fix\|bug\|i
 **Task:** Count merge commits that affected this file in the last 2 months **BEFORE the current PR**
 
 **⚠️ CRITICAL: Temporal Filtering Required**
-```bash
-# Load PR timestamp from metadata
-PR_TIMESTAMP=$(jq -r '.pr_timestamp' output/pr-{{PR_NUMBER}}/metadata.json)
 
-# Count merge commits on main branch BEFORE PR, within last 2 months
-git log main --since="2 months ago" --until="${PR_TIMESTAMP}" --merges --oneline -- <file> | wc -l
+Use Read tool to load `output/pr-{{PR_NUMBER}}/metadata.json` and extract the `pr_timestamp` value.
+
+Then run:
+```bash
+git -C workspace/{{REPO}} log main --since="2 months ago" --until="@{pr_timestamp}" --merges --oneline -- <file>
 ```
+
+Count the number of output lines in the agent to get the merge conflict frequency.
 
 **Interpretation:**
 - **0-2 merges** = Normal collaboration

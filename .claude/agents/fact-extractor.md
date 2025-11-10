@@ -142,11 +142,21 @@ Parse `pr.diff` to get list of changed source files.
 
 **Filter**: Only process `.java`, `.py`, `.ts`, `.tsx`, `.js`, `.kt` files
 
-**Example**:
-```bash
-# Extract changed files from diff
-grep "^+++" pr.diff | cut -d' ' -f2 | grep -E '\.(java|py|ts|tsx|js|kt)$'
+**How to extract changed source files:**
+
+Use Grep tool to find changed files:
 ```
+Grep(
+  pattern="^\\+\\+\\+ ",
+  path="output/pr-{{NUMBER}}/pr.diff",
+  output_mode="content"
+)
+```
+
+From the results:
+1. Parse each line to extract filename (split by space, take second field)
+2. Filter for source code extensions: .java, .py, .ts, .tsx, .js, .kt, .go, .rs, .rb, .php, .scala
+3. Remove `b/` prefix from paths if present
 
 ---
 
@@ -2736,3 +2746,113 @@ This example demonstrates:
 - ✅ **Comprehensive fact extraction** (calls, async communication, error handling)
 - ✅ **Structured output** (follows fact-schema.json exactly)
 - ✅ **Risk identification** (facts enable risk-analyzer to detect failure modes)
+
+---
+
+## Phase 4: Create Extraction Summary (Optional)
+
+After all fact files are saved, create a summary document for human readers and the critic-agent.
+
+### Purpose
+
+Provide a human-readable overview of what was extracted for quick review and to help the critic-agent understand file coverage.
+
+### Instructions
+
+**File:** `{output_dir}/pr-{NUMBER}/facts/EXTRACTION_SUMMARY.md`
+
+**CRITICAL: Use the Write tool to create this file. Do NOT use bash commands, cat, heredoc, or redirect operators.**
+
+### Summary Content Template
+
+Include the following sections:
+
+1. **Extraction Status**
+   - COMPLETED or PARTIAL
+   - Repository name
+   - PR number
+   - Date/timestamp
+   - Count of files processed
+
+2. **Files Analyzed**
+   - List each analyzed file with:
+     - File path
+     - File type (Service, Configuration, Model, Repository, etc.)
+     - Brief 1-2 sentence description of key findings
+
+3. **Key Patterns Detected**
+   - Summary of database calls found
+   - Summary of async communication patterns
+   - Summary of configuration issues
+   - Any notable observations
+
+4. **Observations for Risk Analysis**
+   - Highlight areas of concern
+   - Note any missing resilience patterns
+   - Flag files that warrant closer review
+
+### Format
+
+- Use Markdown formatting
+- Clear section headers with `##` and `###`
+- Bullet points for lists
+- Keep descriptions concise (1-2 sentences per file)
+
+### Example Structure
+
+```markdown
+# AST Fact Extraction Summary - PR #699
+
+## Extraction Status: COMPLETED
+
+**Repository:** spring-data-examples
+**PR Number:** 699
+**Extraction Date:** 2025-11-09
+**Files Processed:** 8 Java source files
+
+---
+
+## Files Analyzed
+
+### 1. EvilEmpire.java
+- **Type:** Service Component
+- **Key Findings:** 2 database calls with no timeout configuration
+
+### 2. DataSourceConfiguration.java
+- **Type:** Infrastructure Configuration
+- **Key Findings:** Configures 2 embedded H2 databases, no resilience config
+
+...
+
+---
+
+## Key Patterns Detected
+
+### Database Calls
+- Total Calls: 2
+- Timeout Configuration: None detected
+- Error Handling: No try-catch blocks
+
+### Configuration
+- DataSources: 2 embedded H2 databases
+- Resilience: No circuit breakers, retries, or timeouts configured
+
+---
+
+## Observations for Risk Analysis
+
+1. No timeout configuration on database calls
+2. No error handling in service layer
+3. Multiple datasources require careful transaction management
+```
+
+### When to Create
+
+Create this summary:
+- ✅ After all fact JSON files have been saved
+- ✅ When file count > 5 (provides value for larger PRs)
+- ❌ Skip if file count <= 5 (JSON files are sufficient)
+
+### Importance
+
+This file is **optional** and for convenience only. The critic-agent can work without it by listing `*.json` files directly.
