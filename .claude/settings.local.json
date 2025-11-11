@@ -48,7 +48,8 @@
       "mcp__tree_sitter__list_projects_tool",
       "Skill(git-risk-analysis)",
       "SlashCommand(/analyze-pr:*)",
-      "Bash(test:*)"
+      "Bash(test:*)",
+      "WebFetch(domain:github.com)"
     ],
     "deny": [
       "Bash(rm:*)",

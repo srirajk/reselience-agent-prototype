@@ -2,7 +2,7 @@
 
 AI-powered Pull Request analysis system that detects production resilience risks including missing circuit breakers, timeout configurations, breaking API changes, and other failure modes that could cause production outages.
 
-> **🚀 v2.0 (ast-int branch)**: Now featuring **AST-based fact extraction** with MCP Tree-sitter! Detects risks in unknown libraries using LLM reasoning from semantic facts. See [Architecture](../miscellaneous-docs/Vanguard/RegressionAgent/Resilience_Agent_Architecture_Final.md) for details.
+> **🚀 v2.0 (ast-int branch)**: Now featuring **AST-based fact extraction** with MCP Tree-sitter! Detects risks in unknown libraries using LLM reasoning from semantic facts.
 
 ## Quick Start
 
@@ -30,7 +30,7 @@ For detailed setup instructions, see [Getting Started Guide](docs/GETTING-STARTE
 
 ## What Gets Analyzed
 
-**v2.0 Innovation**: The Resilience Agent uses **AST-based fact extraction** to reason about code semantically. It can detect risks in **unknown Vanguard-specific libraries** by recognizing patterns (e.g., names ending in "Client", blocking methods) without hardcoded library lists.
+**v2.0 Innovation**: The Resilience Agent uses **AST-based fact extraction** to reason about code semantically. It can detect risks in **unknown custom libraries** by recognizing patterns (e.g., names ending in "Client", blocking methods) without hardcoded library lists.
 
 The agent detects production risks across multiple languages (Java, Python, Node.js, Kotlin/Android):
 
@@ -416,7 +416,7 @@ For detailed troubleshooting, see [Getting Started Guide](docs/GETTING-STARTED.m
 ### AST-Based Fact Extraction
 - **MCP Tree-sitter Integration**: Semantic code analysis across Java, Python, Node.js, Kotlin
 - **Fact-Driven LLM Reasoning**: Extract facts (dependencies, call semantics, config) → LLM reasons using base knowledge
-- **Unknown Library Detection**: Recognizes Vanguard-specific libraries via naming patterns (e.g., "VanguardHttpClient") without hardcoding
+- **Unknown Library Detection**: Recognizes custom libraries via naming patterns (e.g., "CustomHttpClient") without hardcoding
 
 ### Multi-Language Support
 - **Single workflow** works across all languages (same risk-analysis.json schema)
@@ -429,10 +429,7 @@ For detailed troubleshooting, see [Getting Started Guide](docs/GETTING-STARTED.m
 - **Git-enhanced metrics**: Hotspot detection, rollback history correlation
 
 ### Architecture Documentation
-Complete architecture documentation available:
-- [Architecture Final](../miscellaneous-docs/Vanguard/RegressionAgent/Resilience_Agent_Architecture_Final.md) - Fact-driven approach
-- [Multi-Language Plan](../miscellaneous-docs/Vanguard/RegressionAgent/Multi_Language_Support_Plan.md) - Implementation roadmap
-- [Updated Workflow](../miscellaneous-docs/Vanguard/RegressionAgent/new-thoughts-updated.md) - Step-by-step pipeline
+Complete architecture documentation available in the docs/ directory.
 
 ### Comparison: v1.0 vs v2.0
 
@@ -442,7 +439,7 @@ Complete architecture documentation available:
 | Languages | Java (examples) | Java, Python, Node, Kotlin |
 | Unknown Libraries | Cannot detect | Detects via semantic patterns |
 | Severity | Pattern-based | Context-aware (fan-in/fan-out) |
-| Scalability | Limited to known libraries | Scales to custom Vanguard libraries |
+| Scalability | Limited to known libraries | Scales to custom libraries |
 
 ---
 
