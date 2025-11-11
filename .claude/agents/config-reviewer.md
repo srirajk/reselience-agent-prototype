@@ -147,27 +147,14 @@ Recommend scripts to validate configuration before deployment:
 - URLs resolve and are reachable
 - Secrets are properly mounted/available
 
-**Example Test Script:**
-```bash
-#!/bin/bash
-# config-validation.sh
+**Configuration Validation Approach:**
 
-# Test 1: Database connection
-echo "Testing database connection..."
-psql -h $DB_HOST -U $DB_USER -c "SELECT 1" || exit 1
-
-# Test 2: External API reachability
-echo "Testing payment API..."
-curl -f $PAYMENT_API/health || exit 1
-
-# Test 3: Verify pool size
-if [ $DB_POOL_SIZE -gt 100 ]; then
-  echo "ERROR: DB_POOL_SIZE ($DB_POOL_SIZE) exceeds max_connections"
-  exit 1
-fi
-
-echo "All configuration tests passed!"
-```
+For each configuration finding, recommend specific validation checks:
+- **Database connection:** Test connectivity using database credentials
+- **External API reachability:** Verify API endpoints are accessible
+- **Pool sizes:** Confirm values are within infrastructure limits
+- **Placeholders:** Check for unresolved template values (REPLACE_ME, TODO, etc.)
+- **Secrets:** Ensure sensitive values use environment variables, not hardcoded strings
 
 ---
 
@@ -203,7 +190,7 @@ New config key in application-dev.yml but not in application-prod.yml
   "pattern": "Config key 'payment.api.url' exists in dev but missing in prod",
   "impact": "Application will fail to start or use incorrect default value in production",
   "recommendation": "Add payment.api.url to application-prod.yml with production endpoint",
-  "test_script": "# Validate payment API URL is set\nif [ -z \"$PAYMENT_API_URL\" ]; then\n  echo \"ERROR: PAYMENT_API_URL not set\"\n  exit 1\nfi\ncurl -f $PAYMENT_API_URL/health || exit 1"
+  "validation": "Verify payment.api.url is set and the endpoint is reachable"
 }
 ```
 
@@ -224,7 +211,7 @@ Connection pool size that exceeds database max_connections
   "pattern": "Database pool_size (200) likely exceeds database max_connections (typical default: 100)",
   "impact": "Application will fail to acquire database connections on startup, causing errors like 'FATAL: remaining connection slots are reserved'",
   "recommendation": "Reduce pool_size to 50 or verify database max_connections is set to at least 250",
-  "test_script": "# Verify database can handle pool size\nDB_MAX_CONN=$(psql -h $DB_HOST -U $DB_USER -tAc 'SHOW max_connections')\nif [ $DB_POOL_SIZE -ge $DB_MAX_CONN ]; then\n  echo \"ERROR: Pool size exceeds max connections\"\n  exit 1\nfi"
+  "validation": "Query database to verify max_connections setting can accommodate the configured pool size"
 }
 ```
 
@@ -245,7 +232,7 @@ Configuration value still has placeholder text
   "pattern": "API key still has placeholder value 'REPLACE_ME'",
   "impact": "API calls will fail with authentication error, causing production outage",
   "recommendation": "Replace with actual API key from secrets manager (e.g., AWS Secrets Manager, Vault)",
-  "test_script": "# Check for placeholder values\nif grep -q 'REPLACE_ME\\|TODO\\|CHANGEME' config/*.yml; then\n  echo \"ERROR: Found placeholder values in production config\"\n  grep -n 'REPLACE_ME\\|TODO\\|CHANGEME' config/*.yml\n  exit 1\nfi"
+  "validation": "Check all configuration files for placeholder patterns like REPLACE_ME, TODO, CHANGEME, and localhost"
 }
 ```
 
@@ -266,7 +253,7 @@ Password or API key hardcoded in configuration file
   "pattern": "Database password hardcoded in configuration file",
   "impact": "Security vulnerability - credentials exposed in version control",
   "recommendation": "Remove hardcoded password. Use environment variable or secrets manager: password: ${DB_PASSWORD}",
-  "test_script": "# Verify no hardcoded secrets\nif grep -qE 'password:\\s*[\"\\']?[^$]' config/*.yml; then\n  echo \"ERROR: Found hardcoded password\"\n  exit 1\nfi"
+  "validation": "Scan configuration files for hardcoded passwords, API keys, and other sensitive values that should be externalized"
 }
 ```
 
@@ -289,13 +276,16 @@ Save your findings as JSON to the path specified by the orchestrator (e.g., `out
       "pattern": "Short description of the config issue",
       "impact": "What will break in production",
       "recommendation": "Specific fix to apply",
-      "test_script": "Shell script to validate this config"
+      "validation": "How to verify this configuration is correct"
     }
   ],
-  "config_validation_script": {
-    "description": "Combined script to validate all production configuration",
-    "script": "#!/bin/bash\n# Production Config Validation\n\n# Test 1: Check for placeholders\ngrep -qE 'REPLACE_ME|TODO|localhost' config/prod.yml && exit 1\n\n# Test 2: Validate database connection\npsql -h $DB_HOST -U $DB_USER -c 'SELECT 1' || exit 1\n\n# Test 3: Verify pool sizes\n[ $DB_POOL_SIZE -le 100 ] || exit 1\n\necho 'All config tests passed'\n"
-  },
+  "validation_checklist": [
+    "Check for placeholder values (REPLACE_ME, TODO, localhost)",
+    "Validate database connectivity with production credentials",
+    "Verify pool sizes are within infrastructure limits",
+    "Confirm all required configuration keys are present in production",
+    "Ensure sensitive values use environment variables or secrets manager"
+  ],
   "environment_comparison": {
     "dev_only_keys": ["debug.enabled", "mock.external_api"],
     "prod_only_keys": ["ssl.enabled", "monitoring.datadog_key"],
@@ -328,13 +318,13 @@ Save your findings as JSON to the path specified by the orchestrator (e.g., `out
 - ✅ Compare all environment configs (dev, staging, prod)
 - ✅ Check for placeholder patterns
 - ✅ Verify infrastructure compatibility
-- ✅ Recommend runnable test scripts
+- ✅ Provide clear validation guidance
 - ✅ Flag security issues (hardcoded secrets)
 
 ### Don't:
 - ❌ Assume all missing prod keys are errors (dev-only keys are OK)
 - ❌ Flag every config difference (some are intentional)
-- ❌ Recommend overly complex validation scripts
+- ❌ Provide vague validation recommendations
 - ❌ Ignore environment-specific overrides
 
 ---
@@ -345,6 +335,6 @@ Your analysis is successful when:
 - ✅ All new config keys are present in production
 - ✅ No placeholder values in production config
 - ✅ Configuration values are valid for production infrastructure
-- ✅ Recommended test scripts are runnable
+- ✅ Validation guidance is clear and actionable
 - ✅ Security issues (hardcoded secrets) are flagged
 - ✅ JSON output is valid

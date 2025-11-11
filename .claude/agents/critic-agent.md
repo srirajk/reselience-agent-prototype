@@ -156,6 +156,55 @@ For each finding, assess confidence:
 
 ---
 
+### 4. Test Recommendation Quality
+
+For each test recommendation, verify:
+
+**✅ Test is specific and actionable**
+```json
+{
+  "test_needed": ["Mock holdings service with 10s delay, verify endpoint returns within 5s timeout"]
+  // ✅ Specific: exact delay, exact expected timeout
+}
+```
+
+**❌ Reject vague test recommendations:**
+```json
+{
+  "test_needed": ["Test timeout handling"]
+  // ❌ Too vague: what timeout? what scenario?
+}
+```
+
+**✅ Test type matches finding**
+
+Test type selection guide:
+- **HTTP timeout issues** → Integration test with mocked delays
+- **Breaking API changes** → Contract test (consumer-driven or provider)
+- **Circuit breaker missing** → Load test with service failure simulation
+- **Message schema changes** → Schema compatibility test (backward/forward)
+- **Async communication issues** → Integration test with message broker
+- **Database resilience** → Integration test with DB failure injection
+- **Retry logic** → Integration test with transient failure simulation
+
+**✅ Test covers failure mode**
+- Each failure mode has at least one test recommendation
+- Test demonstrates the risk (not just happy path)
+- Test validates the fix (e.g., timeout actually prevents hanging)
+
+**Examples of good vs bad test recommendations:**
+
+❌ Bad: "Add tests for the API"
+✅ Good: "Add contract test: verify GET /api/orders returns 200 with OrderDTO schema including new 'status' field"
+
+❌ Bad: "Test error handling"
+✅ Good: "Integration test: inject HTTP 500 error from inventory service, verify circuit breaker opens after 5 failures"
+
+❌ Bad: "Test performance"
+✅ Good: "Load test: 1000 concurrent requests with inventory service delayed 10s, verify no thread pool exhaustion"
+
+---
+
 ## Synthesis Process
 
 ### Step 1: Categorize Findings
@@ -201,83 +250,141 @@ Recommended merge strategy: {APPROVE | REQUEST_CHANGES | APPROVE_WITH_TESTS}
 
 ## Output Format
 
-Write your synthesized report as Markdown to `output/pr-{NUMBER}/final-report.md`:
+**IMPORTANT**: You MUST use the **Write tool** to save your final report as a Markdown file.
 
-```markdown
-# Pull Request Resilience Analysis
+### Step 1: Read Report Template
 
-**PR Number:** {NUMBER}
-**Analyzed At:** {timestamp}
-**Overall Risk:** {CRITICAL | HIGH | MEDIUM | LOW}
-**Recommendation:** {🔴 REQUEST_CHANGES | 🟡 APPROVE_WITH_TESTS | 🟢 APPROVE}
-
----
-
-## Executive Summary
-
-{2-3 sentence summary of key findings and recommendation}
-
----
-
-## Critical Findings (Must Fix)
-
-### 1. {Finding Title}
-**File:** `{file}:{line}`
-**Issue:** {description}
-**Impact:** {impact}
-**Fix:** {recommendation}
-
----
-
-## High Priority Findings (Should Fix)
-
-### 1. {Finding Title}
-...
-
----
-
-## Test Recommendations
-
-### Integration Tests
-- {test 1}
-- {test 2}
-
-### Contract Tests
-- {test 1}
-
----
-
-## Merge Decision
-
-**🔴 REQUEST_CHANGES** | **🟡 APPROVE_WITH_TESTS** | **🟢 APPROVE**
-
-**Rationale:** {Why this decision}
-
-**Required Actions:**
-1. {Action 1}
-2. {Action 2}
-
-**Optional Improvements:**
-1. {Improvement 1}
-
----
-
-## Analysis Quality Metrics
-
-- **Total Findings:** {count}
-  - Critical: {count}
-  - High: {count}
-  - Medium: {count}
-  - Low: {count}
-- **False Positives Filtered:** {count}
-- **Confidence:** {HIGH | MEDIUM | LOW}
-
----
-
-## Detailed Findings
-
-{Full list of all findings, organized by severity}
+Read the template from:
 ```
+templates/template-final-report.md
+```
+
+This template defines the structure, placeholders, and formatting instructions for the final report.
+
+### Step 2: Gather File Coverage Data
+
+Before writing the report, gather information about what files were analyzed vs. skipped:
+
+**Data Sources:**
+1. **Total PR files**: Parse `output/pr-{NUMBER}/pr.diff` to get list of ALL changed files
+2. **Analyzed files**: Read `output/pr-{NUMBER}/facts/EXTRACTION_SUMMARY.md` or list `*.json` files in `facts/` directory
+3. **Context files**: Calculate difference (total PR files - analyzed files)
+
+**Categorize Context Files Using Pattern Matching:**
+
+For each non-source file, determine its type using these heuristics:
+
+**1. Check file extension patterns:**
+- Configuration formats: yml, yaml, json, xml, properties, toml, ini, conf, env, cfg, config, hcl, tfvars
+- Documentation formats: md, txt, rst, adoc, org, tex
+- Build/dependency files: gradle, pom.xml, package.json, requirements.txt, Gemfile, Cargo.toml, go.mod, Makefile, CMakeLists.txt, *.csproj, *.sln, setup.py, pyproject.toml, composer.json
+- Binary/media formats: png, jpg, jpeg, gif, svg, pdf, zip, tar, gz, bz2, 7z, rar, mp4, avi, mov, wav, mp3, woff, woff2, ttf, otf, eot, ico, webp
+
+**2. Check file path patterns:**
+- Test files: Path contains test/, tests/, spec/, __tests__/, __test__/, testing/, e2e/, integration/ OR filename matches *Test.*, *Spec.*, *.test.*, *.spec.*, *_test.*, *_spec.*
+- Generated/build output: Path contains build/, dist/, target/, out/, bin/, obj/, generated/, node_modules/, vendor/, .next/, .nuxt/, __pycache__/, .cache/, .gradle/, .tox/, .pytest_cache/, .dart_tool/
+
+**3. Check filename patterns:**
+- Build files: Exact matches for Makefile, Dockerfile, Rakefile, Gemfile, Podfile, BUILD, WORKSPACE
+- Lock files: Ends with .lock or -lock.json (package-lock.json, yarn.lock, Gemfile.lock, poetry.lock, Cargo.lock, pnpm-lock.yaml)
+- CI/CD: Path starts with .github/, .gitlab/, .circleci/ OR filename is .travis.yml, .jenkins/, azure-pipelines.yml, .drone.yml, buildspec.yml
+
+**4. Assign category and reason based on matched pattern:**
+
+| Pattern Match | Category | Reason |
+|---------------|----------|--------|
+| Configuration extension | Configuration | No executable code, no method calls to analyze |
+| Documentation extension | Documentation | No production runtime behavior |
+| Build file pattern | Build file | Build-time only, not deployed to production |
+| Test path/name pattern | Test file | Analyzed separately for test coverage |
+| Binary/media extension | Binary/Media | Not analyzable source code |
+| Generated path pattern | Generated file | Auto-generated, not reviewed |
+| Lock file pattern | Dependency lock file | Dependency versions, not source code |
+| CI/CD path pattern | CI/CD configuration | Pipeline configuration, not application code |
+| No pattern match | Unknown | Unrecognized file type - manual review recommended |
+
+**5. Special case - AST extraction failed:**
+If file has source code extension (java, py, ts, tsx, js, jsx, kt, go, rs, rb, php, cs, cpp, c, h, swift, scala, clj) but is NOT in analyzed list:
+- Category: "AST extraction failed"
+- Reason: "Parser error or unsupported syntax"
+
+**Generate File Exclusion Explanations Dynamically:**
+
+After categorizing all context files, generate the `{file_exclusion_explanations}` text:
+
+**Format:**
+```markdown
+**Why these files don't need resilience analysis:**
+
+{For each unique category found in this PR's context files:}
+- **{Category Name}** (Examples: {list 2-3 actual filenames from this category}) - {Reason from table above}
+
+**Note:** These files were reviewed to understand configuration context and dependencies, but they don't contain resilience patterns (circuit breakers, timeouts, retries) that require analysis.
+```
+
+**Example output for a PR with config, docs, and build files:**
+```markdown
+**Why these files don't need resilience analysis:**
+- **Configuration** (application.yml, logback.xml) - No executable code, no method calls to analyze
+- **Documentation** (README.md, CHANGELOG.md) - No production runtime behavior
+- **Build file** (build.gradle, pom.xml) - Build-time only, not deployed to production
+
+**Note:** These files were reviewed to understand configuration context and dependencies, but they don't contain resilience patterns (circuit breakers, timeouts, retries) that require analysis.
+```
+
+**Key principle:** Only include categories that actually exist in THIS PR's context files. Don't list categories that aren't present.
+
+**Calculate Coverage by Type - Fully Dynamic:**
+
+1. **Discover all unique file extensions** from the PR diff:
+   - Parse pr.diff and extract file extension from each file path
+   - Group files by their extension (e.g., .java, .py, .md, .yml, .gradle, .xml, .properties, .txt, .png)
+
+2. **For each discovered extension**, calculate:
+   - **Total count**: How many files with this extension in the PR
+   - **Analyzed count**: How many files with this extension were successfully analyzed (have fact JSON files)
+   - **Context count**: Total - Analyzed (files reviewed for context)
+   - **Source coverage %**:
+     - IF Analyzed > 0: Calculate (Analyzed / Total) * 100 and format as percentage (e.g., "80%", "100%")
+     - IF Analyzed = 0: Display "N/A" (this extension is for context files only)
+
+3. **Determine source vs. context extensions dynamically:**
+   - **Source extension**: Any extension where at least one file was successfully analyzed
+   - **Context extension**: Any extension where zero files were analyzed (all were reviewed for context)
+   - DO NOT use hardcoded lists - let the data determine what's source vs. context
+
+4. **Sort extensions in the coverage table:**
+   - Source extensions first (sorted by extension name)
+   - Context extensions second (sorted by extension name)
+
+**Calculate Aggregate Metrics:**
+- `{total_pr_files}`: Count of ALL files in pr.diff
+- `{source_files_total}`: Count of files that were successfully analyzed (have fact JSON files)
+- `{files_analyzed}`: Same as source_files_total
+- `{source_coverage_percentage}`: If source_files_total > 0, calculate (files_analyzed / source_files_total) * 100, else "N/A"
+- `{files_reviewed_for_context}`: total_pr_files - files_analyzed
+
+**DO NOT hardcode any file extensions or types.** Discover everything dynamically from the actual PR contents.
+
+### Step 3: Write Final Report
+
+**Output Path**: The orchestrator will specify the exact path (e.g., `output/pr-{NUMBER}/final-report.md`)
+
+**Steps**:
+1. Fill all placeholders in the template with actual data from `risk-analysis.json`
+2. Populate file coverage tables with data from Step 2:
+   - `{analyzed_files_table}`: List each source file analyzed with language, AST success, findings count
+   - `{context_files_table}`: List each non-source file with type (Configuration/Documentation/Build/Test/Binary) and reason
+   - `{coverage_by_type_table}`: Show coverage breakdown by file extension with "Analyzed" and "Reviewed for Context" columns
+   - `{total_pr_files}`: Total number of files in the PR
+   - `{source_files_total}`: Total source code files
+   - `{files_analyzed}`: Count of source files analyzed
+   - `{source_coverage_percentage}`: Percentage of source files analyzed
+   - `{files_reviewed_for_context}`: Count of non-source files reviewed
+3. Follow the template instructions at the bottom for formatting each section
+4. Use the Write tool to save the report to the specified output path
+5. Verify the file was written successfully
+6. **Do NOT** return the report in conversation text - it must be written to a file
 
 ---
 
@@ -341,4 +448,6 @@ Your synthesis is successful when:
 - ✅ Executive summary is clear and actionable
 - ✅ Merge recommendation is justified
 - ✅ Developers know exactly what to fix
+- ✅ **Markdown file created using Write tool** (not returned in conversation)
+- ✅ Report saved to specified path
 - ✅ Markdown report is well-formatted and readable

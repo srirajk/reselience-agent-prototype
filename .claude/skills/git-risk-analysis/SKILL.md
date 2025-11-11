@@ -14,16 +14,34 @@ allowed-tools: [Bash]
 - ✅ Enhancing risk scores with churn/hotspot data
 - ✅ Identifying files with deployment failure history
 
-## Git Metrics Commands
+## Git Metrics Analysis
+
+**🚨 CRITICAL EXECUTION RULES:**
+- **ALL git commands must run from project root** using `git -C workspace/{{REPO}}`
+- **Do NOT use pipe operators** (`|`), compound operators (`&&`, `||`), or redirects (`>`, `2>`)
+- **Do NOT use command substitution** (`$(...)`) for variable assignments
+- **Do NOT use text processing tools** (`wc`, `tr`, `awk`, `sed`, `sort`)
+- **Agent must count lines, deduplicate values, and parse output directly**
+- **Use Read tool** to load metadata.json instead of `jq` command
 
 ### 1. Detect Code Hotspots (High Churn Rate)
 
 **Purpose:** Identify files changed frequently (instability indicator)
 
+**Task:** Count how many commits modified this file in the last 30 days **BEFORE the current PR**
+
+**⚠️ CRITICAL: Temporal Filtering Required**
+
+Use Read tool to load `output/pr-{{PR_NUMBER}}/metadata.json` and extract the `pr_timestamp` value.
+
+Then run:
 ```bash
-# Count commits touching this file in last 30 days
-git log --since="1 month ago" --oneline -- {FILE_PATH} | wc -l
+git -C workspace/{{REPO}} log main --since="30 days ago" --until="@{pr_timestamp}" --oneline -- <file>
 ```
+
+Count the number of output lines in the agent to get the churn metric.
+
+**Why:** Only analyze historical commits before the current PR to avoid temporal contamination (using future data to predict past risk).
 
 **Interpretation:**
 - **0-3 commits** = Stable file (LOW risk)
@@ -39,10 +57,18 @@ git log --since="1 month ago" --oneline -- {FILE_PATH} | wc -l
 
 **Purpose:** Detect coordination risk from multiple contributors
 
+**Task:** Identify how many unique authors have modified this file in the last 3 months **BEFORE the current PR**
+
+**⚠️ CRITICAL: Temporal Filtering Required**
+
+Use Read tool to load `output/pr-{{PR_NUMBER}}/metadata.json` and extract the `pr_timestamp` value.
+
+Then run:
 ```bash
-# List authors who touched this file in last 3 months
-git shortlog -sn --since="3 months ago" -- {FILE_PATH}
+git -C workspace/{{REPO}} log main --since="3 months ago" --until="@{pr_timestamp}" --format="%ae" -- <file>
 ```
+
+Deduplicate the output and count unique entries in the agent to get the authorship metric.
 
 **Interpretation:**
 - **1-2 authors** = Good ownership (LOW risk)
@@ -57,10 +83,20 @@ git shortlog -sn --since="3 months ago" -- {FILE_PATH}
 
 **Purpose:** Identify files involved in production rollbacks/hotfixes
 
+**Task:** Search git commit history **BEFORE the current PR** for messages containing keywords like "revert", "rollback", "hotfix", or "emergency" that affected this file
+
+**⚠️ CRITICAL: Temporal Filtering Required**
+
+Use Read tool to load `output/pr-{{PR_NUMBER}}/metadata.json` and extract the `pr_timestamp` value.
+
+Then run:
 ```bash
-# Search for rollback/revert/hotfix commits affecting this file
-git log --all --grep="revert\|rollback\|hotfix\|emergency" --oneline -- {FILE_PATH}
+git -C workspace/{{REPO}} log main --until="@{pr_timestamp}" --grep="revert\|rollback\|hotfix\|emergency" --oneline -- <file>
 ```
+
+Count the number of output lines to determine if the file has rollback history.
+
+**❌ DO NOT USE:** `git log --all` (includes future PR branches)
 
 **Interpretation:**
 - **0 matches** = No rollback history
@@ -75,11 +111,18 @@ git log --all --grep="revert\|rollback\|hotfix\|emergency" --oneline -- {FILE_PA
 
 **Purpose:** Calculate lines changed (churn magnitude)
 
+**Task:** Calculate the total number of lines added and deleted in this file over the last 30 days **BEFORE the current PR**
+
+**⚠️ CRITICAL: Temporal Filtering Required**
+
+Use Read tool to load `output/pr-{{PR_NUMBER}}/metadata.json` and extract the `pr_timestamp` value.
+
+Then run:
 ```bash
-# Total lines added + deleted in last 30 days
-git log --since="1 month ago" --numstat -- {FILE_PATH} | \
-  awk 'NF==3 {added+=$1; deleted+=$2} END {print added+deleted}'
+git -C workspace/{{REPO}} log main --since="30 days ago" --until="@{pr_timestamp}" --numstat -- <file>
 ```
+
+Parse the numstat output in the agent, sum the additions and deletions columns to calculate total lines changed.
 
 **Interpretation:**
 - **0-100 lines** = Small changes (LOW risk)
@@ -95,10 +138,18 @@ git log --since="1 month ago" --numstat -- {FILE_PATH} | \
 
 **Purpose:** Measure code quality via bug fix frequency
 
+**Task:** Count commits in the last 60 days **BEFORE the current PR** that mention "fix", "bug", "issue", or "defect" in their messages for this file
+
+**⚠️ CRITICAL: Temporal Filtering Required**
+
+Use Read tool to load `output/pr-{{PR_NUMBER}}/metadata.json` and extract the `pr_timestamp` value.
+
+Then run:
 ```bash
-# Count bug fix commits in last 60 days
-git log --since="2 months ago" --grep="fix\|bug\|issue\|defect" --oneline -- {FILE_PATH} | wc -l
+git -C workspace/{{REPO}} log main --since="60 days ago" --until="@{pr_timestamp}" --grep="fix\|bug\|issue\|defect" -i --oneline -- <file>
 ```
+
+Count the number of output lines in the agent to get the bug fix rate.
 
 **Interpretation:**
 - **0-1 fixes** = Stable code quality
@@ -113,10 +164,18 @@ git log --since="2 months ago" --grep="fix\|bug\|issue\|defect" --oneline -- {FI
 
 **Purpose:** Identify files with complex merge history
 
+**Task:** Count merge commits that affected this file in the last 2 months **BEFORE the current PR**
+
+**⚠️ CRITICAL: Temporal Filtering Required**
+
+Use Read tool to load `output/pr-{{PR_NUMBER}}/metadata.json` and extract the `pr_timestamp` value.
+
+Then run:
 ```bash
-# Count merge commits affecting this file
-git log --oneline --merges --since="2 months ago" -- {FILE_PATH} | wc -l
+git -C workspace/{{REPO}} log main --since="2 months ago" --until="@{pr_timestamp}" --merges --oneline -- <file>
 ```
+
+Count the number of output lines in the agent to get the merge conflict frequency.
 
 **Interpretation:**
 - **0-2 merges** = Normal collaboration
@@ -172,61 +231,35 @@ Base Risk Score (from static analysis)
 - Run git commands from repository root
 - Handle missing files gracefully (new files have no git history)
 - Cache results to avoid redundant git calls
-- Use --oneline to reduce output size
-- Check if file exists before running git log
+- Consider context (1 commit from 1 author in a 5-year-old file is stable!)
+- **USE TEMPORAL FILTERING: Only analyze commits BEFORE current PR timestamp** ⚠️
+- Load PR timestamp from metadata.json before running git queries
+- Use `main --until="${PR_TIMESTAMP}"` for all git log commands
 
 ### ❌ Don't:
 - Fail entire analysis if git commands error
 - Run git commands on files outside the repository
 - Make assumptions about git configuration
-- Ignore context (1 commit from 1 author in a 5-year-old file is stable!)
+- **Use `--all` flag or search future branches** ⚠️
+- Include commits from PR branches that haven't been merged yet
+- Analyze data from future PRs (temporal contamination)
 
 ---
 
-## Error Handling
-
-```bash
-# Example: Safe git command with error handling
-if git rev-parse --git-dir > /dev/null 2>&1; then
-  CHURN=$(git log --since="1 month ago" --oneline -- "$FILE" 2>/dev/null | wc -l)
-  echo "Churn: $CHURN"
-else
-  echo "Not a git repository, skipping git analysis"
-fi
-```
-
----
-
-## Example Usage
+## Example Risk Assessment
 
 **Scenario:** Analyzing PaymentService.java in PR #1234
 
-```bash
-# 1. Check churn
-git log --since="1 month ago" --oneline -- src/services/PaymentService.java | wc -l
-# Output: 15  → HOTSPOT (+20 risk)
+After gathering git metrics, you might find:
+- **Churn:** 15 commits in last month → HOTSPOT (+20 risk)
+- **Authors:** 4 unique contributors → Coordination concern (+5 risk)
+- **Rollbacks:** 2 rollback commits found → Deployment failure history (UPGRADE TO CRITICAL)
+- **Bug fixes:** 5 bug fixes in last 60 days → Quality concern (+10 risk)
 
-# 2. Check authors
-git shortlog -sn --since="3 months ago" -- src/services/PaymentService.java
-# Output:
-#    8  Alice
-#    4  Bob
-#    2  Charlie
-#    1  Dave
-# → 4 authors (+5 risk for coordination)
-
-# 3. Check rollbacks
-git log --all --grep="revert\|rollback" --oneline -- src/services/PaymentService.java
-# Output: 2 commits found
-# → Rollback history (UPGRADE TO CRITICAL)
-
-# 4. Final assessment
-# Base severity: HIGH
-# + Hotspot: +20
-# + Authors: +5
-# + Rollback history: UPGRADE TO CRITICAL
-# Final: CRITICAL with git context
-```
+**Final Assessment:**
+- Base severity: HIGH
+- Git adjustments: +35 points
+- Final: CRITICAL with strong evidence from git history
 
 ---
 
