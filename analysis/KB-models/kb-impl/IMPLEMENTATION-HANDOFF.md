@@ -824,7 +824,275 @@ test_recommendations:
 
 ---
 
-### 6. Orchestrator Changes
+### 6. Suppression KB (Critic Agent)
+
+**Purpose**: Allow critic-agent to suppress, downgrade, or upgrade findings based on organizational knowledge.
+
+**File**: `critic_kb/suppressions.yaml`
+
+#### Complete Suppression Schema
+
+```yaml
+# Suppression KB version for migrations
+version: 1
+
+# List of suppression rules
+entries:
+  # Rule 1: Global HTTP timeout configured at infrastructure level
+  - kb_id: KB_HTTP_TIMEOUT_GLOBAL
+    pattern_id: HTTP_MISSING_TIMEOUT
+
+    # When to apply this suppression
+    match_when:
+      service: orders-service
+      file_pattern: "src/clients/Internal*Client.java"
+
+    # What to do with matching findings
+    decision:
+      action: downgrade          # suppress | downgrade | upgrade
+      new_severity: low
+
+    # Why this suppression exists
+    reason:
+      summary: >
+        Internal HTTP clients inherit global timeout configuration
+        from shared Spring RestTemplate bean with 5s timeout.
+      evidence_url: https://wiki.example.com/spring-config#rest-template
+
+    # Where this suppression applies
+    scope:
+      applies_to:
+        - repo: orders-service
+        - repo: inventory-service
+
+      # Optional: Expiration date for temporary suppressions
+      expires_at: "2026-06-01"
+
+    # Who approved this suppression
+    metadata:
+      created_by: platform-team
+      created_at: "2026-01-07"
+      reviewed_by: security-team
+```
+
+#### Suppression Actions
+
+**suppress**: Completely remove finding from report
+```yaml
+decision:
+  action: suppress
+```
+
+**downgrade**: Reduce severity level
+```yaml
+decision:
+  action: downgrade
+  new_severity: low  # critical → high → medium → low
+```
+
+**upgrade**: Increase severity level
+```yaml
+decision:
+  action: upgrade
+  new_severity: critical
+```
+
+#### Match Conditions
+
+**By service name**:
+```yaml
+match_when:
+  service: orders-service
+```
+
+**By file pattern** (glob):
+```yaml
+match_when:
+  file_pattern: "src/clients/Internal*.java"
+```
+
+**By topic pattern** (for Kafka findings):
+```yaml
+match_when:
+  topic_pattern: "legacy-*"
+```
+
+**Multiple conditions** (all must match):
+```yaml
+match_when:
+  service: legacy-processor
+  file_pattern: "src/legacy/*"
+  topic_pattern: "legacy-*"
+```
+
+#### Example Suppression Rule 1: Global Timeout Config
+
+```yaml
+- kb_id: KB_HTTP_TIMEOUT_GLOBAL
+  pattern_id: HTTP_MISSING_TIMEOUT
+
+  match_when:
+    service: orders-service
+    file_pattern: "src/clients/Internal*Client.java"
+
+  decision:
+    action: downgrade
+    new_severity: low
+
+  reason:
+    summary: >
+      Internal HTTP clients inherit global timeout configuration
+      from shared Spring RestTemplate bean with 5s timeout.
+    evidence_url: https://wiki.example.com/spring-config
+
+  scope:
+    applies_to:
+      - repo: orders-service
+```
+
+#### Example Suppression Rule 2: Known False Positive
+
+```yaml
+- kb_id: KB_KAFKA_DLQ_LEGACY_SYSTEM
+  pattern_id: KAFKA_CONSUMER_WITHOUT_DLQ
+
+  match_when:
+    service: legacy-processor
+    topic_pattern: "legacy-*"
+
+  decision:
+    action: suppress
+
+  reason:
+    summary: >
+      Legacy topics use external retry/DLQ system (RabbitMQ)
+      before Kafka migration completed. Tracked in JIRA-1234.
+    ticket_url: https://jira.example.com/JIRA-1234
+
+  scope:
+    applies_to:
+      - repo: legacy-processor
+    expires_at: "2026-03-01"      # Remove after migration
+```
+
+#### Example Suppression Rule 3: Upgrade Severity
+
+```yaml
+- kb_id: KB_PAYMENT_CRITICAL_PATH
+  pattern_id: HTTP_MISSING_TIMEOUT
+
+  match_when:
+    service: payment-service
+    file_pattern: "src/payment/*"
+
+  decision:
+    action: upgrade
+    new_severity: critical
+
+  reason:
+    summary: >
+      Payment service is in critical path for revenue.
+      Any timeout issues here directly impact business.
+
+  scope:
+    applies_to:
+      - repo: payment-service
+```
+
+---
+
+### 7. Critic Agent Changes
+
+**File to Modify**: `.claude/agents/critic-agent.md`
+
+**Add to Phase 1 (Input Loading)**:
+
+```markdown
+## Input Files
+
+You will receive:
+1. **Risk Analysis**: `output/pr-{NUMBER}/risk-analysis.json` (findings from risk-analyzer)
+2. **Suppression KB**: `critic_kb/suppressions.yaml` (suppression rules) ← NEW
+3. **PR Metadata**: `output/pr-{NUMBER}/metadata.json` (PR context)
+```
+
+**Add new Phase: Apply Suppressions**:
+
+```markdown
+## Phase 2: Apply Suppression Rules
+
+After loading risk analysis findings, apply suppression rules:
+
+### Step 1: Load Suppressions
+
+```bash
+# Read suppression KB
+cat critic_kb/suppressions.yaml
+```
+
+### Step 2: For Each Finding
+
+For each finding in risk-analysis.json:
+
+1. **Check if any suppression rule matches**:
+   - Match by `pattern_id`
+   - Check `match_when` conditions (service, file_pattern, topic_pattern)
+   - Check expiration date (`expires_at`)
+
+2. **If match found, apply decision**:
+   - **suppress**: Skip this finding entirely (don't include in report)
+   - **downgrade**: Reduce severity to `new_severity`
+   - **upgrade**: Increase severity to `new_severity`
+
+3. **Track suppression reasoning**:
+   ```json
+   {
+     "finding_id": "HTTP_MISSING_TIMEOUT_001",
+     "original_severity": "high",
+     "final_severity": "low",
+     "suppressed_by": "KB_HTTP_TIMEOUT_GLOBAL",
+     "suppression_reason": "Internal clients inherit global timeout config"
+   }
+   ```
+
+### Step 3: Output Modified Findings
+
+Include suppression metadata in final report:
+- Original severity
+- Final severity
+- Suppression rule ID
+- Reason for suppression
+```
+
+**Update final report template to show suppressions**:
+
+```markdown
+## Findings (After Suppressions)
+
+### CRITICAL (0 findings)
+[No critical findings]
+
+### HIGH (2 findings)
+[List findings...]
+
+### Suppressed Findings (3)
+
+**1. HTTP timeout in Internal clients (suppressed by KB_HTTP_TIMEOUT_GLOBAL)**
+- Original Severity: HIGH
+- Action: Downgraded to LOW
+- Reason: Internal HTTP clients inherit global timeout from shared RestTemplate
+- Evidence: [Spring Config Documentation](https://wiki.example.com/spring-config)
+
+**2. Kafka DLQ for legacy topics (suppressed by KB_KAFKA_DLQ_LEGACY_SYSTEM)**
+- Original Severity: CRITICAL
+- Action: Suppressed
+- Reason: Legacy topics use external RabbitMQ DLQ system (JIRA-1234)
+- Expires: 2026-03-01
+```
+
+---
+
+### 8. Orchestrator Changes
 
 **File to Modify**: `.claude/commands/analyze-pr.md`
 
